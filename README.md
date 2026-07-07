@@ -107,3 +107,8 @@ The interface ships in English and Yoruba. Use the EN and YO toggle in the top b
 - Refreshed, more dynamic UI: a decluttered top bar with the Lagos crest hard left, a compact action cluster (language, notifications, and an account menu), animated page transitions, count-up hero figures, and hover micro-interactions, kept restrained for an official platform.
 - Fees are no longer shown publicly. The fee and its waterfall appear only where a signed-in user is transacting or has oversight (the food handler payment step, the Sterling ledger, and regulator views). The public landing states only that the model is transparent and self-sustaining.
 - GDPR and NDPA 2023: a consent banner on first visit, a full privacy notice (controller, lawful basis including explicit consent for health data, retention, and data-subject rights) reachable from the footer and the account menu, and a self-service option to erase local data. Certification decisions remain subject to human review.
+
+
+## Go-live diagnostics
+
+After you deploy, open https://your-app-url/#/status. It checks, live, that the Supabase keys are set and every table is reachable, whether the Paystack public key is present, and whether the three serverless functions are deployed. Each row shows OK or Check, and a Check row tells you exactly what to fix.

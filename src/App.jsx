@@ -297,6 +297,10 @@ const store = {
   async dispatch(to, channel, message) {
     // Fire-and-forget real SMS/email via the serverless Termii endpoint. Silent in preview.
     try { await fetch('/api/notify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, channel, message }) }) } catch { /* ignore */ }
+  },
+  async ping(table) {
+    if (!SUPABASE_READY) return { ok: false, error: 'Supabase keys not set' }
+    try { const { error } = await supabase.from(table).select('*', { count: 'exact', head: true }); if (error) return { ok: false, error: error.message }; return { ok: true } } catch (e) { return { ok: false, error: String(e) } }
   }
 }
 
@@ -1778,6 +1782,57 @@ function PrivacyModal({ open, onClose }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Go-live diagnostics (open at #/status)                             */
+/* ------------------------------------------------------------------ */
+
+const STATUS_TABLES = ['food_handlers', 'test_orders', 'certificates', 'escrow', 'escrow_releases', 'audit_log', 'establishments', 'laboratories', 'businesses', 'water_tests', 'notifications']
+
+function StatusPage({ onHome }) {
+  const [db, setDb] = useState(null)
+  const [api, setApi] = useState(null)
+  useEffect(() => {
+    (async () => {
+      const d = {}
+      for (const tbl of STATUS_TABLES) d[tbl] = await store.ping(tbl)
+      setDb(d)
+      const a = {}
+      for (const path of ['/api/paystack-verify', '/api/notify', '/api/anthropic']) {
+        try { const r = await fetch(path, { method: 'GET' }); a[path] = r.status !== 404 } catch { a[path] = false }
+      }
+      setApi(a)
+    })()
+  }, [])
+  const Row = ({ label, ok, detail }) => (
+    <div className="ord" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px' }}>
+      <span><b style={{ fontFamily: 'Lora,serif' }}>{label}</b>{detail && <div className="muted" style={{ fontSize: 12 }}>{detail}</div>}</span>
+      <span className={'pill ' + (ok ? 'ok' : 'no')}>{ok ? 'OK' : 'Check'}</span>
+    </div>
+  )
+  return (
+    <div className="page"><div className="wrap">
+      <button className="btn ghost" onClick={onHome} style={{ paddingLeft: 0, marginBottom: 12 }}>&larr; Back</button>
+      <div className="kicker">Go-live diagnostics</div>
+      <h2 className="sec serif">Connection check</h2>
+      <p className="sub">Open this at your-app-url/#/status after deploying to confirm every key, table and function is wired. Nothing here is sensitive.</p>
+
+      <h3 className="serif" style={{ fontSize: 17 }}>Environment</h3>
+      <Row label="Supabase URL and anon key" ok={SUPABASE_READY} detail={SUPABASE_READY ? 'Set' : 'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY not set'} />
+      <Row label="Paystack public key" ok={PAYSTACK_READY} detail={PAYSTACK_READY ? 'Set, live checkout enabled' : 'VITE_PAYSTACK_PUBLIC_KEY not set, payments simulated'} />
+
+      <h3 className="serif" style={{ fontSize: 17, marginTop: 20 }}>Database tables</h3>
+      {!db && <p className="muted">Checking...</p>}
+      {db && STATUS_TABLES.map(tbl => <Row key={tbl} label={tbl} ok={db[tbl] && db[tbl].ok} detail={db[tbl] && db[tbl].ok ? 'Reachable' : (db[tbl] && db[tbl].error) || ''} />)}
+
+      <h3 className="serif" style={{ fontSize: 17, marginTop: 20 }}>Serverless functions</h3>
+      {!api && <p className="muted">Checking...</p>}
+      {api && ['/api/paystack-verify', '/api/notify', '/api/anthropic'].map(path => <Row key={path} label={path} ok={api[path]} detail={api[path] ? 'Deployed' : 'Not found, deploy to Vercel'} />)}
+
+      <div className="note" style={{ marginTop: 18 }}>All OK means you are live. Any Check row tells you exactly what is missing: run schema.sql for missing tables, set the matching environment variable for a missing key, or redeploy for a missing function.</div>
+    </div></div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  Root                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -1794,11 +1849,12 @@ export default function App() {
   const [verifyId, setVerifyId] = useState('')
   const [lang, setLang] = useState(I18N.lang)
   const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [special, setSpecial] = useState(null)
   function changeLang(L) { I18N.lang = L; try { localStorage.setItem('safeplate:lang', L) } catch { /* ignore */ } setLang(L) }
 
   useEffect(() => { seedDemo() }, [])
   useEffect(() => {
-    function onHash() { const { route, param } = parseHash(); if (route === 'verify') { setVerifyId(param || ''); setMode('app'); setTab('verify') } }
+    function onHash() { const { route, param } = parseHash(); if (route === 'status') { setSpecial('status') } else if (route === 'verify') { setSpecial(null); setVerifyId(param || ''); setMode('app'); setTab('verify') } else { setSpecial(null) } }
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
@@ -1811,6 +1867,7 @@ export default function App() {
   async function signOut() { await store.signOut(); setSession(null); setMode('app'); setTab('overview') }
 
   function page() {
+    if (special === 'status') return <StatusPage onHome={() => { window.location.hash = ''; setSpecial(null) }} />
     if (mode === 'auth' && !session) return <AuthFlow onDone={onAuthed} onBack={() => { setMode('app'); setTab(tabs[0].id) }} />
     if (tab === 'verify') return <VerifyPage initialId={verifyId} />
     if (!session) {
