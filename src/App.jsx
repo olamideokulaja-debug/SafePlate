@@ -26,6 +26,70 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const SUPABASE_READY = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 const supabase = SUPABASE_READY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null
 
+/* Paystack (live when VITE_PAYSTACK_PUBLIC_KEY is set, simulated otherwise) */
+const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY
+const PAYSTACK_READY = Boolean(PAYSTACK_PUBLIC_KEY)
+function loadPaystack() {
+  return new Promise((resolve, reject) => {
+    if (window.PaystackPop) return resolve()
+    const sc = document.createElement('script'); sc.src = 'https://js.paystack.co/v1/inline.js'
+    sc.onload = () => resolve(); sc.onerror = () => reject(new Error('Could not load Paystack')); document.body.appendChild(sc)
+  })
+}
+async function payWithPaystack({ email, amountNaira, reference }) {
+  if (!PAYSTACK_READY) { await new Promise(r => setTimeout(r, 700)); return { reference: reference || ('DEMO-' + Date.now()), simulated: true } }
+  await loadPaystack()
+  return new Promise((resolve, reject) => {
+    const handler = window.PaystackPop.setup({ key: PAYSTACK_PUBLIC_KEY, email: email || 'noreply@safeplate.lagosstate.gov.ng', amount: Math.round(amountNaira * 100), currency: 'NGN', ref: reference || ('SP-' + Date.now()), callback: resp => resolve({ reference: resp.reference }), onClose: () => reject(new Error('Payment window closed')) })
+    handler.openIframe()
+  })
+}
+
+/* Internationalisation. English and Yoruba, extend by adding keys. */
+const STRINGS = {
+  en: {
+    signin: 'Sign in', signout: 'Sign out', back: 'Back',
+    nav_overview: 'Overview', nav_system: 'The system', nav_impact: 'Impact', nav_fees: 'Fees', nav_verify: 'Verify',
+    nav_testing: 'My testing', nav_queue: 'Laboratory queue', nav_team: 'My team', nav_water: 'Water testing',
+    nav_review: 'Review', nav_certificates: 'Certificates', nav_analytics: 'Analytics', nav_audit: 'Audit trail',
+    nav_enforcement: 'Enforcement', nav_accreditation: 'Accreditation', nav_ledger: 'Escrow ledger', nav_releases: 'Releases', nav_fund: 'Fund', nav_reconcile: 'Reconciliation',
+    hero_eyebrow: 'Statewide, live compliance', hero_title: 'Every plate in Lagos, backed by a verified food handler.',
+    hero_lede: 'SafePlate registers, tests, certifies and monitors every food handler in Lagos State, through accredited laboratories, with payments held in escrow and released only on approved results.',
+    cta_register: 'Register as a food handler', cta_verify: 'Verify a certificate',
+    chip_active: 'active certificates', chip_compliance: 'compliance', chip_secure: 'Escrow-secured payments', hero_model: 'A transparent, self-sustaining model, with no hidden charges.',
+    sys_kicker: 'The system', sys_title: 'Four pillars, one accountable platform',
+    imp_kicker: 'Why it matters', imp_title: 'The cost of unsafe food is measured in lives',
+    fees_kicker: 'Transparent fees', fees_title: 'What you pay, and exactly where it goes',
+    verify_kicker: 'Public verification', verify_title: 'Verify a food handler certificate',
+    verify_sub: 'Enter a SAFEPLATE ID to confirm status, panel and expiry. No account needed.', verify_label: 'Certificate ID', verify_btn: 'Verify certificate', verify_notfound: 'No certificate matches that ID. Check the ID and try again.',
+    fh_title: 'Your testing', fh_s1: 'Register and get your SAFEPLATE ID', fh_s2: 'Your mandatory test panel', fh_s3: 'Choose an accredited laboratory', fh_s4: 'Pay into escrow',
+    lbl_fullname: 'Full name', lbl_phone: 'Phone number', lbl_nin: 'NIN (optional, verified when provided)', lbl_email: 'Email (optional)', lbl_employer: 'Employer (optional)',
+    btn_create_id: 'Create my SAFEPLATE ID', btn_choose_lab: 'Choose a laboratory', fh_mandatory: 'Mandatory', fh_id_assigned: 'SAFEPLATE ID assigned:', fh_done: 'You are registered and paid. Your test is scheduled.'
+  },
+  yo: {
+    signin: 'Wọlé', signout: 'Jáde', back: 'Padà',
+    nav_overview: 'Ìsọníṣókí', nav_system: 'Ètò náà', nav_impact: 'Ipa', nav_fees: 'Owó', nav_verify: 'Ṣàyẹ̀wò',
+    nav_testing: 'Àyẹ̀wò mi', nav_queue: 'Àkọ́sílẹ̀ ilé-ìwádìí', nav_team: 'Àwọn òṣìṣẹ́ mi', nav_water: 'Àyẹ̀wò omi',
+    nav_review: 'Àtúnyẹ̀wò', nav_certificates: 'Ìwé-ẹ̀rí', nav_analytics: 'Ìṣirò', nav_audit: 'Àkọsílẹ̀ ìṣàkóso',
+    nav_enforcement: 'Ìmúṣẹ', nav_accreditation: 'Ìfọwọ́sí', nav_ledger: 'Ìwé-owó ìṣúra', nav_releases: 'Ìtúsílẹ̀', nav_fund: 'Owó-ìṣúra', nav_reconcile: 'Ìbámu',
+    hero_eyebrow: 'Ìbámu tí ń lọ lọ́wọ́ kákiri ìpínlẹ̀', hero_title: 'Gbogbo àwo oúnjẹ ní Èkó, pẹ̀lú olùtọ́jú oúnjẹ tí a ti ṣàyẹ̀wò.',
+    hero_lede: 'SafePlate ń forúkọsílẹ̀, ń ṣàyẹ̀wò, ń fúnni ní ìwé-ẹ̀rí, ó sì ń bójútó gbogbo olùtọ́jú oúnjẹ ní Ìpínlẹ̀ Èkó, nípasẹ̀ àwọn ilé-ìwádìí tí a fọwọ́sí, pẹ̀lú owó tí a fi pamọ́ tí a ó tú sílẹ̀ lẹ́yìn ìfọwọ́sí àbájáde.',
+    cta_register: 'Forúkọsílẹ̀ gẹ́gẹ́ bí olùtọ́jú oúnjẹ', cta_verify: 'Ṣàyẹ̀wò ìwé-ẹ̀rí',
+    chip_active: 'ìwé-ẹ̀rí tí ń ṣiṣẹ́', chip_compliance: 'ìbámu', chip_secure: 'Ìsanwó tí a dáàbò bò', hero_model: 'Ètò tó ṣe kedere, tó ń gbọ́ ara rẹ̀, láìsí owó ìkọ̀kọ̀.',
+    sys_kicker: 'Ètò náà', sys_title: 'Òpó mẹ́rin, pẹpẹ ìṣirò kan',
+    imp_kicker: 'Ìdí tí ó fi ṣe pàtàkì', imp_title: 'Iye owó oúnjẹ tí kò ní ààbò ni a fi ẹ̀mí wọn wọ̀n',
+    fees_kicker: 'Owó tó ṣe kedere', fees_title: 'Ohun tí o ń san, àti ibi tí ó ń lọ gan-an',
+    verify_kicker: 'Ìdánilójú gbogbo ènìyàn', verify_title: 'Ṣàyẹ̀wò ìwé-ẹ̀rí olùtọ́jú oúnjẹ',
+    verify_sub: 'Tẹ ID SAFEPLATE sí i láti mọ ipò, àyẹ̀wò àti ọjọ́ ìparí. Kò sí àkàǹtì tí a nílò.', verify_label: 'ID Ìwé-ẹ̀rí', verify_btn: 'Ṣàyẹ̀wò ìwé-ẹ̀rí', verify_notfound: 'Kò sí ìwé-ẹ̀rí tí ó bá ID yẹn mu. Ṣàyẹ̀wò ID kí o sì tún gbìyànjú.',
+    fh_title: 'Àyẹ̀wò rẹ', fh_s1: 'Forúkọsílẹ̀ kí o sì gba ID SAFEPLATE rẹ', fh_s2: 'Àkójọ àyẹ̀wò dandan rẹ', fh_s3: 'Yan ilé-ìwádìí tí a fọwọ́sí', fh_s4: 'San sí ìṣúra ààbò',
+    lbl_fullname: 'Orúkọ kíkún', lbl_phone: 'Nọ́mbà fóònù', lbl_nin: 'NIN (àṣàyàn)', lbl_email: 'Ímeèlì (àṣàyàn)', lbl_employer: 'Agbaniṣíṣẹ́ (àṣàyàn)',
+    btn_create_id: 'Ṣẹ̀dá ID SAFEPLATE mi', btn_choose_lab: 'Yan ilé-ìwádìí', fh_mandatory: 'Dandan', fh_id_assigned: 'ID SAFEPLATE tí a fún ọ:', fh_done: 'A ti forúkọsílẹ̀ rẹ, a sì ti san. A ti ṣètò àyẹ̀wò rẹ.'
+  }
+}
+const I18N = { lang: (typeof localStorage !== 'undefined' && localStorage.getItem('safeplate:lang')) || 'en' }
+function t(key) { return (STRINGS[I18N.lang] && STRINGS[I18N.lang][key]) || STRINGS.en[key] || key }
+const tr = t
+
 const DEMO = {
   key: 'safeplate:v6',
   read() { try { return JSON.parse(localStorage.getItem(this.key)) || {} } catch { return {} } },
@@ -81,6 +145,11 @@ function normaliseCert(cert) {
   return { ...cert, status: expiry.getTime() < Date.now() ? 'EXPIRED' : 'VALID' }
 }
 
+// Map between the app's camelCase fields and the database's snake_case columns.
+const toSnake = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/[A-Z]/g, m => '_' + m.toLowerCase()), v])) : o
+const toCamel = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v])) : o
+const camelList = a => (a || []).map(toCamel)
+
 const store = {
   async signUp(email, password, meta) {
     if (SUPABASE_READY) {
@@ -106,23 +175,23 @@ const store = {
   },
   async signOut() { if (SUPABASE_READY) await supabase.auth.signOut() },
   async saveHandler(record) {
-    if (SUPABASE_READY) { const { error } = await supabase.from('food_handlers').upsert(record, { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return record }
+    if (SUPABASE_READY) { const { error } = await supabase.from('food_handlers').upsert(toSnake(record), { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return record }
     const db = DEMO.read(); db.handlers = db.handlers || {}; db.handlers[record.safeplateId] = record; DEMO.write(db); return record
   },
   async createOrder(order) {
-    if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').insert(order); if (error) throw new Error(error.message); return order }
+    if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').insert(toSnake(order)); if (error) throw new Error(error.message); return order }
     const db = DEMO.read(); db.orders = db.orders || {}; db.orders[order.id] = order; DEMO.write(db); return order
   },
   async listOrders(labName) {
-    if (SUPABASE_READY) { const { data } = await supabase.from('test_orders').select('*').eq('lab', labName).order('created_at', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('test_orders').select('*').eq('lab', labName).order('created_at', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.orders || {}).filter(o => o.lab === labName).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   },
   async listAllOrders() {
-    if (SUPABASE_READY) { const { data } = await supabase.from('test_orders').select('*').order('created_at', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('test_orders').select('*').order('created_at', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.orders || {}).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   },
   async updateOrder(id, patch) {
-    if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').update(patch).eq('id', id); if (error) throw new Error(error.message); return patch }
+    if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return patch }
     const db = DEMO.read(); db.orders = db.orders || {}; db.orders[id] = { ...(db.orders[id] || {}), ...patch }; DEMO.write(db); return db.orders[id]
   },
   async phoneExists(phone) {
@@ -131,11 +200,11 @@ const store = {
   },
   async verifyCertificate(id) {
     const clean = (id || '').trim().toUpperCase()
-    if (SUPABASE_READY) { const { data } = await supabase.from('certificates').select('*').eq('safeplate_id', clean).limit(1); const c = data && data[0]; return c ? normaliseCert(c) : null }
+    if (SUPABASE_READY) { const { data } = await supabase.from('certificates').select('*').eq('safeplate_id', clean).limit(1); const c = data && data[0]; return c ? normaliseCert(toCamel(c)) : null }
     const db = DEMO.read(); const cert = db.certificates?.[clean]; return cert ? normaliseCert(cert) : null
   },
   async issueCertificate(cert) {
-    if (SUPABASE_READY) { const { error } = await supabase.from('certificates').upsert(cert, { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return cert }
+    if (SUPABASE_READY) { const { error } = await supabase.from('certificates').upsert(toSnake(cert), { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return cert }
     const db = DEMO.read(); db.certificates = db.certificates || {}; db.certificates[cert.safeplateId] = cert; DEMO.write(db); return cert
   },
   async revokeCertificate(id) {
@@ -144,19 +213,19 @@ const store = {
     const db = DEMO.read(); if (db.certificates?.[clean]) { db.certificates[clean].status = 'REVOKED'; DEMO.write(db) }
   },
   async createEscrow(rec) {
-    if (SUPABASE_READY) { await supabase.from('escrow').upsert(rec, { onConflict: 'safeplate_id' }); return rec }
+    if (SUPABASE_READY) { await supabase.from('escrow').upsert(toSnake(rec), { onConflict: 'safeplate_id' }); return rec }
     const db = DEMO.read(); db.escrow = db.escrow || {}; db.escrow[rec.safeplateId] = rec; DEMO.write(db); return rec
   },
   async listEscrow() {
-    if (SUPABASE_READY) { const { data } = await supabase.from('escrow').select('*').order('ts', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('escrow').select('*').order('ts', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.escrow || {}).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   },
   async createRelease(rec) {
-    if (SUPABASE_READY) { await supabase.from('escrow_releases').insert(rec); return rec }
+    if (SUPABASE_READY) { await supabase.from('escrow_releases').insert(toSnake(rec)); return rec }
     const db = DEMO.read(); db.releases = db.releases || []; db.releases.unshift(rec); DEMO.write(db); return rec
   },
   async listReleases() {
-    if (SUPABASE_READY) { const { data } = await supabase.from('escrow_releases').select('*').order('ts', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('escrow_releases').select('*').order('ts', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return db.releases || []
   },
   async releaseEscrow(safeplateId, by) {
@@ -180,11 +249,11 @@ const store = {
     const db = DEMO.read(); return db.audit || []
   },
   async listEstablishments() {
-    if (SUPABASE_READY) { const { data } = await supabase.from('establishments').select('*'); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('establishments').select('*'); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.establishments || {})
   },
   async updateEstablishment(id, patch) {
-    if (SUPABASE_READY) { await supabase.from('establishments').update(patch).eq('id', id); return }
+    if (SUPABASE_READY) { await supabase.from('establishments').update(toSnake(patch)).eq('id', id); return }
     const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[id] = { ...(db.establishments[id] || {}), ...patch }; DEMO.write(db)
   },
   async setLabAccredited(id, val) {
@@ -192,27 +261,27 @@ const store = {
     const db = DEMO.read(); db.labAccred = db.labAccred || {}; db.labAccred[id] = val; DEMO.write(db)
   },
   async getBusiness(email) {
-    if (SUPABASE_READY) { const { data } = await supabase.from('businesses').select('*').eq('owner_email', email).limit(1); return (data && data[0]) || null }
+    if (SUPABASE_READY) { const { data } = await supabase.from('businesses').select('*').eq('owner_email', email).limit(1); const b = data && data[0]; return b ? toCamel(b) : null }
     const db = DEMO.read(); return (db.businesses || {})[email] || null
   },
   async saveBusiness(email, biz) {
-    if (SUPABASE_READY) { await supabase.from('businesses').upsert({ ...biz, owner_email: email }); return biz }
+    if (SUPABASE_READY) { await supabase.from('businesses').upsert({ ...toSnake(biz), owner_email: email }); return biz }
     const db = DEMO.read(); db.businesses = db.businesses || {}; db.businesses[email] = biz; DEMO.write(db); return biz
   },
   async createWaterTest(rec) {
-    if (SUPABASE_READY) { await supabase.from('water_tests').upsert(rec, { onConflict: 'swid' }); return rec }
+    if (SUPABASE_READY) { await supabase.from('water_tests').upsert(toSnake(rec), { onConflict: 'swid' }); return rec }
     const db = DEMO.read(); db.water = db.water || {}; db.water[rec.swid] = rec; DEMO.write(db); return rec
   },
   async listWaterTests(email) {
-    if (SUPABASE_READY) { const { data } = await supabase.from('water_tests').select('*').eq('owner_email', email).order('ts', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('water_tests').select('*').eq('owner_email', email).order('ts', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.water || {}).filter(w => w.ownerEmail === email).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   },
   async listAllWaterTests() {
-    if (SUPABASE_READY) { const { data } = await supabase.from('water_tests').select('*').order('ts', { ascending: false }); return data || [] }
+    if (SUPABASE_READY) { const { data } = await supabase.from('water_tests').select('*').order('ts', { ascending: false }); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.water || {}).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   },
   async updateWaterTest(swid, patch) {
-    if (SUPABASE_READY) { await supabase.from('water_tests').update(patch).eq('swid', swid); return }
+    if (SUPABASE_READY) { await supabase.from('water_tests').update(toSnake(patch)).eq('swid', swid); return }
     const db = DEMO.read(); db.water = db.water || {}; db.water[swid] = { ...(db.water[swid] || {}), ...patch }; DEMO.write(db)
   },
   async notify(audience, title, body) {
@@ -224,6 +293,10 @@ const store = {
     const match = n => n.audience === 'all' || (session && (n.audience === session.role || n.audience === session.agency || n.audience === session.email))
     if (SUPABASE_READY) { const { data } = await supabase.from('notifications').select('*').order('ts', { ascending: false }).limit(50); return (data || []).filter(match) }
     const db = DEMO.read(); return (db.notices || []).filter(match).slice(0, 50)
+  },
+  async dispatch(to, channel, message) {
+    // Fire-and-forget real SMS/email via the serverless Termii endpoint. Silent in preview.
+    try { await fetch('/api/notify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, channel, message }) }) } catch { /* ignore */ }
   }
 }
 
@@ -329,25 +402,24 @@ function slaExceeded(order) {
 
 function tabsForSession(session) {
   if (!session) return [
-    { id: 'overview', label: 'Overview' },
-    { id: 'system', label: 'The system' },
-    { id: 'impact', label: 'Impact' },
-    { id: 'fees', label: 'Fees' },
-    { id: 'verify', label: 'Verify' }
+    { id: 'overview', label: t('nav_overview') },
+    { id: 'system', label: t('nav_system') },
+    { id: 'impact', label: t('nav_impact') },
+    { id: 'verify', label: t('nav_verify') }
   ]
   switch (session.role) {
-    case 'food_handler': return [{ id: 'testing', label: 'My testing' }, { id: 'verify', label: 'Verify' }]
-    case 'laboratory': return [{ id: 'queue', label: 'Laboratory queue' }, { id: 'verify', label: 'Verify' }]
-    case 'employer': return [{ id: 'team', label: 'My team' }, { id: 'water', label: 'Water testing' }, { id: 'verify', label: 'Verify' }]
+    case 'food_handler': return [{ id: 'testing', label: t('nav_testing') }, { id: 'verify', label: t('nav_verify') }]
+    case 'laboratory': return [{ id: 'queue', label: t('nav_queue') }, { id: 'verify', label: t('nav_verify') }]
+    case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
-      { id: 'ledger', label: 'Escrow ledger' }, { id: 'releases', label: 'Releases' },
-      { id: 'fund', label: 'Fund' }, { id: 'reconcile', label: 'Reconciliation' }, { id: 'verify', label: 'Verify' }
+      { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
+      { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
-      if (session.agency === 'LASEPA') return [{ id: 'enforcement', label: 'Enforcement' }, { id: 'water', label: 'Water' }, { id: 'audit', label: 'Audit trail' }, { id: 'verify', label: 'Verify' }]
-      if (session.agency === 'HEFAMAA') return [{ id: 'accreditation', label: 'Accreditation' }, { id: 'audit', label: 'Audit trail' }, { id: 'verify', label: 'Verify' }]
-      return [{ id: 'review', label: 'Review' }, { id: 'certificates', label: 'Certificates' }, { id: 'analytics', label: 'Analytics' }, { id: 'audit', label: 'Audit trail' }, { id: 'verify', label: 'Verify' }]
-    default: return [{ id: 'verify', label: 'Verify' }]
+      if (session.agency === 'LASEPA') return [{ id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'HEFAMAA') return [{ id: 'accreditation', label: t('nav_accreditation') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      return [{ id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'analytics', label: t('nav_analytics') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+    default: return [{ id: 'verify', label: t('nav_verify') }]
   }
 }
 
@@ -384,6 +456,9 @@ function Styles() {
       .who .nm{font-size:13px;text-align:right;line-height:1.2}
       .who .nm b{display:block;font-family:'Lora',serif;font-size:14px}
       .who .nm small{color:var(--muted);font-size:11px}
+      .langtog{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+      .langbtn{border:0;background:#fff;padding:6px 9px;font-size:12px;font-weight:700;color:var(--muted)}
+      .langbtn.on{background:var(--green);color:#fff}
       .bellwrap{position:relative}
       .bell{border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;display:grid;place-items:center;color:var(--ink)}
       .bell:hover{border-color:var(--green);color:var(--green)}
@@ -516,7 +591,60 @@ function Styles() {
       .footer b{color:#fff;font-family:'Lora',serif}
 
       @media(max-width:860px){.hero{grid-template-columns:1fr}.hero-art{display:none}.pillars{grid-template-columns:repeat(2,1fr)}.burden{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,1fr)}.feesgrid{grid-template-columns:1fr !important}}
-      @media(prefers-reduced-motion:reduce){.pulse{animation:none}.role-card:hover{transform:none}}
+      .hdr{transition:box-shadow .25s ease}
+      .hdr.sc{box-shadow:0 6px 22px rgba(6,20,14,.07)}
+      .brand{transition:opacity .15s}.brand:hover{opacity:.85}
+      .navtab{position:relative;transition:color .18s,background .18s}
+      .navtab:after{content:'';position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:var(--green);border-radius:2px;transform:scaleX(0);transition:transform .22s ease}
+      .navtab.on:after{transform:scaleX(1)}
+      .actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+      .iconbtn{border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;min-width:38px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;justify-content:center;color:var(--ink);font-weight:700;font-size:12px;transition:.15s;position:relative}
+      .iconbtn:hover{border-color:var(--green);color:var(--green)}
+      .iconbtn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid #fff}
+      .iconbtn.lang svg{opacity:.7}
+      .avwrap{position:relative}
+      .avatar{width:38px;height:38px;border-radius:50%;border:0;background:var(--navy);color:#fff;font-family:'Lora',serif;font-weight:700;font-size:14px;cursor:pointer;transition:.15s}
+      .avatar:hover{filter:brightness(1.15)}
+      .avmenu{position:absolute;right:0;top:46px;width:236px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);z-index:60;overflow:hidden;animation:pop .16s ease}
+      .avhead{padding:14px;border-bottom:1px solid var(--line)}
+      .avhead b{font-family:'Lora',serif;font-size:15px;display:block}
+      .avhead small{color:var(--muted);font-size:12px}
+      .avitem{display:block;width:100%;text-align:left;border:0;background:none;padding:11px 14px;font-size:14px;font-weight:600;color:var(--ink)}
+      .avitem:hover{background:var(--green-pale)}
+      .avitem.danger{color:#b3261e;border-top:1px solid var(--line)}
+      @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+      .page{animation:pageIn .34s cubic-bezier(.22,.61,.36,1)}
+      @keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+      .btn{transition:.16s}
+      .btn.p:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,102,0,.18)}
+      .btn.g:hover{transform:translateY(-1px)}
+      .pillar{transition:transform .18s,box-shadow .18s,border-color .18s}
+      .pillar:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(6,20,14,.07);border-color:#cfe0cf}
+      .tile{transition:transform .18s,box-shadow .18s}
+      .tile:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(6,20,14,.05)}
+      .lab-row{transition:transform .14s,border-color .15s,box-shadow .15s}
+      .lab-row:hover{transform:translateY(-1px)}
+      .hero{position:relative}
+      .hero:before{content:'';position:absolute;inset:-50px -30px auto auto;width:340px;height:340px;background:radial-gradient(circle at 70% 30%,rgba(251,174,64,.16),transparent 62%);pointer-events:none;z-index:0}
+      .hero:after{content:'';position:absolute;left:-60px;bottom:-40px;width:260px;height:260px;background:radial-gradient(circle,rgba(0,102,0,.06),transparent 60%);pointer-events:none;z-index:0}
+      .hero>*{position:relative;z-index:1}
+      .hero-fine{margin-top:16px;font-size:12.5px;color:var(--muted);letter-spacing:.01em;opacity:.9}
+      .chip{transition:transform .15s}.chip:hover{transform:translateY(-1px)}
+      .wordmark b{font-size:20px}
+      .consent{position:fixed;left:0;right:0;bottom:0;z-index:95;padding:14px;animation:slideUp .35s ease}
+      @keyframes slideUp{from{transform:translateY(100%)}to{transform:none}}
+      .consent-in{max-width:1000px;margin:0 auto;background:var(--navy);color:#e7eef6;border-radius:14px;padding:15px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;box-shadow:0 14px 44px rgba(0,0,0,.28)}
+      .consent-txt{font-size:13px;max-width:64ch;line-height:1.5}.consent-txt b{color:#fff}
+      .consent-btns{display:flex;gap:10px}
+      .consent .btn{background:transparent;color:#fff;border-color:rgba(255,255,255,.3)}
+      .consent .btn.p{background:var(--gold);color:#3a2600;border-color:var(--gold)}
+      .lnk{background:none;border:0;color:var(--gold);font-weight:700;cursor:pointer;padding:0;text-decoration:underline;font:inherit}
+      .privacy{max-width:640px;max-height:82vh;overflow:auto}
+      .privacy h4{margin:15px 0 3px;font-size:14.5px;font-family:'Lora',serif}
+      .privacy p{margin:0 0 4px;font-size:13.5px}
+      .foot-lnk{background:none;border:0;color:#cfe0cf;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
+      @media(max-width:900px){.wordmark small{display:none}}
+      @media(prefers-reduced-motion:reduce){.pulse{animation:none}.role-card:hover{transform:none}.page{animation:none}.pillar:hover,.tile:hover,.lab-row:hover,.btn.p:hover,.btn.g:hover,.chip:hover{transform:none}.consent{animation:none}.avmenu{animation:none}}
     `}</style>
   )
 }
@@ -534,48 +662,68 @@ function GovBar() {
   )
 }
 
-function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut }) {
+function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, lang, onLang, onPrivacy }) {
   const [bell, setBell] = useState(false)
+  const [menu, setMenu] = useState(false)
   const [notices, setNotices] = useState([])
-  async function toggleBell() { if (!bell) setNotices(await store.listNotices(session)); setBell(v => !v) }
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => { const on = () => setScrolled(window.scrollY > 4); on(); window.addEventListener('scroll', on); return () => window.removeEventListener('scroll', on) }, [])
+  useEffect(() => { if (session) store.listNotices(session).then(setNotices); else setNotices([]) }, [session, lang])
+  async function toggleBell() { if (!bell) setNotices(await store.listNotices(session)); setBell(v => !v); setMenu(false) }
+  const initials = (session && session.name ? session.name : '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   return (
-    <header className="hdr"><div className="wrap"><div className="bar">
-      <button className="brand" onClick={onBrand}>
-        <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
-        <span style={{ textAlign: 'left' }}><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>
-      </button>
-      <nav className="navtabs">
-        {tabs.map(t => (<button key={t.id} className={'navtab ' + (active === t.id ? 'on' : '')} onClick={() => onTab(t.id)}>{t.label}</button>))}
-      </nav>
-      <div className="who">
-        {session ? (
-          <>
-            <div className="bellwrap">
-              <button className="bell" onClick={toggleBell} aria-label="Notifications">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-              </button>
-              {bell && (
-                <div className="bellpanel" onMouseLeave={() => setBell(false)}>
-                  <div className="bellhead">Notifications</div>
-                  {notices.length === 0 && <div className="bellrow muted">No notifications yet.</div>}
-                  {notices.map((n, i) => (<div className="bellrow" key={i}><b>{n.title}</b><div className="muted">{n.body}</div><div className="bellts">{new Date(n.ts).toLocaleString('en-GB')}</div></div>))}
-                </div>
-              )}
-            </div>
-            <span className="nm"><b>{session.name}</b><small>{session.title}</small></span>
-            <button className="btn sm" onClick={onSignOut}>Sign out</button>
-          </>
-        ) : <button className="btn p sm" onClick={onSignIn}>Sign in</button>}
-      </div>
-    </div></div></header>
+    <header className={'hdr' + (scrolled ? ' sc' : '')}>
+      <div className="wrap"><div className="bar">
+        <button className="brand" onClick={onBrand}>
+          <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
+          <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>
+        </button>
+        <nav className="navtabs">
+          {tabs.map(tb => (<button key={tb.id} className={'navtab ' + (active === tb.id ? 'on' : '')} onClick={() => onTab(tb.id)}>{tb.label}</button>))}
+        </nav>
+        <div className="actions">
+          <button className="iconbtn lang" onClick={() => onLang(lang === 'en' ? 'yo' : 'en')} aria-label="Switch language">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
+            <span>{lang.toUpperCase()}</span>
+          </button>
+          {session ? (
+            <>
+              <div className="bellwrap">
+                <button className="iconbtn" onClick={toggleBell} aria-label="Notifications">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                  {notices.length > 0 && <i className="dot" />}
+                </button>
+                {bell && (
+                  <div className="bellpanel" onMouseLeave={() => setBell(false)}>
+                    <div className="bellhead">Notifications</div>
+                    {notices.length === 0 && <div className="bellrow muted">No notifications yet.</div>}
+                    {notices.map((n, i) => (<div className="bellrow" key={i}><b>{n.title}</b><div className="muted">{n.body}</div><div className="bellts">{new Date(n.ts).toLocaleString('en-GB')}</div></div>))}
+                  </div>
+                )}
+              </div>
+              <div className="avwrap">
+                <button className="avatar" onClick={() => { setMenu(v => !v); setBell(false) }} aria-label="Account">{initials}</button>
+                {menu && (
+                  <div className="avmenu" onMouseLeave={() => setMenu(false)}>
+                    <div className="avhead"><b>{session.name}</b><small>{session.title}</small></div>
+                    <button className="avitem" onClick={() => { setMenu(false); onPrivacy() }}>Privacy notice</button>
+                    <button className="avitem danger" onClick={onSignOut}>{t('signout')}</button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : <button className="btn p sm" onClick={onSignIn}>{t('signin')}</button>}
+        </div>
+      </div></div>
+    </header>
   )
 }
 
-function Footer() {
+function Footer({ onPrivacy }) {
   return (
     <footer className="footer"><div className="wrap">
       <div><b>SafePlate</b><br />Operated by the Lagos State Ministry of Health.<br />Oversight: LSMoH, LASEPA, HEFAMAA. Escrow: Sterling Bank.</div>
-      <div style={{ textAlign: 'right' }}>One Health strategy for food and water safety.<br />NAFDAC Food Hygiene Regulation 2019, NDPA 2023.<br />{SUPABASE_READY ? 'Connected backend' : 'Preview mode, backend not yet connected'}</div>
+      <div style={{ textAlign: 'right' }}>One Health strategy for food and water safety.<br />NAFDAC Food Hygiene Regulation 2019, NDPA 2023 and GDPR aligned.<br /><button className="foot-lnk" onClick={onPrivacy}>Privacy notice</button> &middot; {SUPABASE_READY ? 'Connected backend' : 'Preview mode'}</div>
     </div></footer>
   )
 }
@@ -620,22 +768,25 @@ function useGuard() {
 /* ------------------------------------------------------------------ */
 
 function Overview({ onStart, onVerify }) {
+  const certs = useCountUp(14892)
+  const comp = useCountUp(89.4)
   return (
     <div className="page"><div className="wrap">
       <div className="hero">
         <div>
-          <span className="eyebrow"><span className="pulse" />Statewide, live compliance</span>
-          <h1 className="serif">Every plate in Lagos, backed by a verified food handler.</h1>
-          <p className="lede">SafePlate registers, tests, certifies and monitors every food handler in Lagos State, through accredited laboratories, with payments held in escrow and released only on approved results.</p>
+          <span className="eyebrow"><span className="pulse" />{t('hero_eyebrow')}</span>
+          <h1 className="serif">{t('hero_title')}</h1>
+          <p className="lede">{t('hero_lede')}</p>
           <div className="hero-cta">
-            <button className="btn p" onClick={onStart}>Register as a food handler</button>
-            <button className="btn g" onClick={onVerify}>Verify a certificate</button>
+            <button className="btn p" onClick={onStart}>{t('cta_register')}</button>
+            <button className="btn g" onClick={onVerify}>{t('cta_verify')}</button>
           </div>
           <div className="ticker">
-            <span className="chip"><span className="pulse" /><b>14,892</b> active certificates</span>
-            <span className="chip"><b>89.4%</b> compliance</span>
-            <span className="chip"><b>{naira(FEE)}</b> per handler, every 6 months</span>
+            <span className="chip"><span className="pulse" /><b>{Math.round(certs).toLocaleString('en-NG')}</b> {t('chip_active')}</span>
+            <span className="chip"><b>{comp.toFixed(1)}%</b> {t('chip_compliance')}</span>
+            <span className="chip">{t('chip_secure')}</span>
           </div>
+          <p className="hero-fine">{t('hero_model')}</p>
         </div>
         <div className="hero-art"><img src="/lagos-logo.png" alt="Lagos State Government coat of arms" /></div>
       </div>
@@ -646,8 +797,8 @@ function Overview({ onStart, onVerify }) {
 function SystemPage() {
   return (
     <div className="page"><div className="wrap">
-      <div className="kicker">The system</div>
-      <h2 className="sec serif">Four pillars, one accountable platform</h2>
+      <div className="kicker">{t('sys_kicker')}</div>
+      <h2 className="sec serif">{t('sys_title')}</h2>
       <p className="sub">SafePlate moves Lagos from fragmented, reactive checks to a preventive, data-driven model that pays for itself.</p>
       <div className="pillars">{PILLARS.map(p => (
         <div className="pillar" key={p.n}><div className="num">{p.n}</div><h3 className="serif">{p.title}</h3><p>{p.body}</p></div>
@@ -659,8 +810,8 @@ function SystemPage() {
 function ImpactPage() {
   return (
     <div className="page"><div className="wrap">
-      <div className="kicker">Why it matters</div>
-      <h2 className="sec serif">The cost of unsafe food is measured in lives</h2>
+      <div className="kicker">{t('imp_kicker')}</div>
+      <h2 className="sec serif">{t('imp_title')}</h2>
       <p className="sub">Health, economy and governance all point the same way: prevention beats episodic crackdowns.</p>
       <div className="burden">{BURDEN.map(b => (
         <div className="cell" key={b.label}><div className="big">{b.stat}</div><div className="lbl">{b.label}</div><div className="src">Source: {b.src}</div></div>
@@ -681,12 +832,12 @@ function VerifyWidget({ initialId }) {
   }
   return (
     <div className="verify-panel">
-      <div className="field"><label htmlFor="q">Certificate ID</label>
+      <div className="field"><label htmlFor="q">{t('verify_label')}</label>
         <input id="q" value={id} onChange={e => setId(e.target.value)} placeholder="SP-LG-YYYYNNNNN" onKeyDown={e => e.key === 'Enter' && run()} /></div>
-      <button className="btn p block" onClick={() => run()} disabled={loading}>{loading ? 'Checking...' : 'Verify certificate'}</button>
+      <button className="btn p block" onClick={() => run()} disabled={loading}>{loading ? 'Checking...' : t('verify_btn')}</button>
       {result === null && (
         <div className="result EXPIRED" style={{ marginTop: 18 }}><span className="badge EXPIRED">NOT FOUND</span>
-          <p style={{ margin: '10px 0 0' }}>No certificate matches that ID. Check the ID and try again.</p></div>
+          <p style={{ margin: '10px 0 0' }}>{t('verify_notfound')}</p></div>
       )}
       {result && (
         <div className={'result ' + result.status}><span className={'badge ' + result.status}>{result.status}</span>
@@ -705,9 +856,9 @@ function VerifyWidget({ initialId }) {
 function VerifyPage({ initialId }) {
   return (
     <div className="page"><div className="wrap">
-      <div className="kicker">Public verification</div>
-      <h2 className="sec serif">Verify a food handler certificate</h2>
-      <p className="sub">Enter a SAFEPLATE ID to confirm status, panel and expiry. No account needed. Try SP-LG-2026004821 (valid), SP-LG-2025008114 (expired), SP-LG-2026001990 (revoked).</p>
+      <div className="kicker">{t('verify_kicker')}</div>
+      <h2 className="sec serif">{t('verify_title')}</h2>
+      <p className="sub">{t('verify_sub')} Try SP-LG-2026004821 (valid), SP-LG-2025008114 (expired), SP-LG-2026001990 (revoked).</p>
       <VerifyWidget initialId={initialId} />
     </div></div>
   )
@@ -820,7 +971,8 @@ function FoodHandlerModule({ session }) {
   async function pay() {
     setErr(''); setBusy(true)
     try {
-      await new Promise(r => setTimeout(r, 700))
+      const { reference } = await payWithPaystack({ email: form.email, amountNaira: FEE, reference: 'SP-' + form.safeplateId })
+      if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
       await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, nin: form.nin, email: form.email, employer: form.employer, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, createdAt: new Date().toISOString() })
@@ -828,40 +980,41 @@ function FoodHandlerModule({ session }) {
       await store.createEscrow({ safeplateId: form.safeplateId, name: form.name, lab: form.lab.name, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
       await store.notify(session.email, 'Payment received', naira(FEE) + ' held in escrow for your test')
+      await store.dispatch(form.phone, 'sms', 'SafePlate: your ' + naira(FEE) + ' test payment is confirmed. ID ' + form.safeplateId)
       setF('paid', true); setStep(4)
     } catch (e) { setErr('Payment could not be completed. Your test order is saved for 48 hours, try again.') } finally { setBusy(false) }
   }
 
   return (
     <div className="page"><div className="wrap">
-      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Your testing</h2><span className="muted" style={{ fontSize: 13 }}>{session.title}</span></div>
+      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{t('fh_title')}</h2><span className="muted" style={{ fontSize: 13 }}>{session.title}</span></div>
       <div className="steps">{STEP_LABELS.map((l, i) => <div key={l} className={'s ' + (i === step ? 'on' : '') + (i < step ? ' done' : '')} title={l} />)}</div>
       {err && <div className="err">{err}</div>}
 
       {step === 0 && (
         <div className="card">
-          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>Register and get your SAFEPLATE ID</h3><span className="st">Step 1 of 4</span></div>
+          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s1')}</h3><span className="st">Step 1 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Your details are verified and you receive a unique, traceable ID.</p>
-          <div className="field"><label>Full name</label><input value={form.name} onChange={e => setF('name', e.target.value)} placeholder="First and last name" /></div>
-          <div className="field"><label>Phone number</label><input value={form.phone} onChange={e => setF('phone', e.target.value)} placeholder="080..." /></div>
-          <div className="field"><label>NIN (optional, verified when provided)</label><input value={form.nin} onChange={e => setF('nin', e.target.value)} placeholder="11-digit NIN" /></div>
-          <div className="field"><label>Email (optional)</label><input value={form.email} onChange={e => setF('email', e.target.value)} placeholder="you@example.com" /></div>
-          <div className="field"><label>Employer (optional)</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
-          <button className="btn p block" onClick={register} disabled={busy}>{busy ? 'Checking...' : 'Create my SAFEPLATE ID'}</button>
+          <div className="field"><label>{t('lbl_fullname')}</label><input value={form.name} onChange={e => setF('name', e.target.value)} placeholder="First and last name" /></div>
+          <div className="field"><label>{t('lbl_phone')}</label><input value={form.phone} onChange={e => setF('phone', e.target.value)} placeholder="080..." /></div>
+          <div className="field"><label>{t('lbl_nin')}</label><input value={form.nin} onChange={e => setF('nin', e.target.value)} placeholder="11-digit NIN" /></div>
+          <div className="field"><label>{t('lbl_email')}</label><input value={form.email} onChange={e => setF('email', e.target.value)} placeholder="you@example.com" /></div>
+          <div className="field"><label>{t('lbl_employer')}</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
+          <button className="btn p block" onClick={register} disabled={busy}>{busy ? 'Checking...' : t('btn_create_id')}</button>
         </div>
       )}
       {step === 1 && (
         <div className="card">
-          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>Your mandatory test panel</h3><span className="st">Step 2 of 4</span></div>
-          <div className="note" style={{ marginTop: 6, marginBottom: 16 }}>SAFEPLATE ID assigned: <b>{form.safeplateId}</b>. Keep it, it identifies you across every test cycle.</div>
-          {MANDATORY_TESTS.map(t => <div key={t} className="lab-row on" style={{ cursor: 'default' }}><span>{t}</span><span className="pill ok">Mandatory</span></div>)}
+          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s2')}</h3><span className="st">Step 2 of 4</span></div>
+          <div className="note" style={{ marginTop: 6, marginBottom: 16 }}>{tr('fh_id_assigned')} <b>{form.safeplateId}</b>. Keep it, it identifies you across every test cycle.</div>
+          {MANDATORY_TESTS.map(t => <div key={t} className="lab-row on" style={{ cursor: 'default' }}><span>{t}</span><span className="pill ok">{tr('fh_mandatory')}</span></div>)}
           <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>Next testing window will be set for <b>{nextDue}</b>. Reminders go out 14 and 2 days before.</p>
-          <button className="btn p block" onClick={() => setStep(2)}>Choose a laboratory</button>
+          <button className="btn p block" onClick={() => setStep(2)}>{t('btn_choose_lab')}</button>
         </div>
       )}
       {step === 2 && (
         <div className="card">
-          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>Choose an accredited laboratory</h3><span className="st">Step 3 of 4</span></div>
+          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s3')}</h3><span className="st">Step 3 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Accreditation is checked in real time. Unaccredited labs cannot take your order.</p>
           {labsView().map(l => (
             <button key={l.id} className={'lab-row ' + (l.accredited ? '' : 'off')} onClick={() => chooseLab(l)}>
@@ -873,7 +1026,7 @@ function FoodHandlerModule({ session }) {
       )}
       {step === 3 && (
         <div className="card">
-          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>Pay into escrow</h3><span className="st">Step 4 of 4</span></div>
+          <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s4')}</h3><span className="st">Step 4 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Your {naira(FEE)} is held in Sterling Bank escrow and released only after the Ministry approves your results. Payment is by Paystack.</p>
           <table className="split-tbl"><tbody>
             <tr><td colSpan={2} style={{ fontWeight: 700 }}>Laboratory: {form.lab?.name}</td></tr>
@@ -886,7 +1039,7 @@ function FoodHandlerModule({ session }) {
       {step === 4 && (
         <div className="ok-banner">
           <div className="kicker" style={{ color: 'var(--green)' }}>Escrow funded</div>
-          <h3 className="serif" style={{ fontSize: 22, margin: '8px 0' }}>You are registered and paid. Your test is scheduled.</h3>
+          <h3 className="serif" style={{ fontSize: 22, margin: '8px 0' }}>{tr('fh_done')}</h3>
           <p className="muted" style={{ marginTop: 0 }}>The laboratory has been notified. After your sample is tested and the Ministry approves the result, your Certificate of Fitness is issued and becomes publicly verifiable by the QR below.</p>
           <div className="cert">
             <div className="kicker" style={{ color: 'var(--green)' }}>SafePlate certificate</div>
@@ -947,7 +1100,7 @@ function OrderCard({ order, lab, onAdvance, onRefresh }) {
     if (order.tests.some(t => !results[t]) || !tech.trim() || !accNo.trim()) { setErr('Enter a result for every test, plus technician ID and accreditation number.'); return }
     if (accNo.trim() !== lab.accNo) { await store.updateOrder(order.id, { status: 'Quarantined', note: 'Accreditation number mismatch, referred to LSMoH for investigation.' }); onRefresh(); return }
     const ref = order.tests.filter(t => results[t] === 'refer')
-    await store.updateOrder(order.id, { status: 'Submitted', results, technicianId: tech.trim(), accreditationNumber: accNo.trim(), resultFile: fileName || 'result.pdf', reportedToLSMoH: ref.length > 0, biobankConfirm: ref.length > 0, submittedAt: new Date().toISOString() })
+    await store.updateOrder(order.id, { status: 'Submitted', results, technicianId: tech.trim(), accreditationNumber: accNo.trim(), resultFile: fileName || 'result.pdf', reportedLsmoh: ref.length > 0, biobankConfirm: ref.length > 0, submittedAt: new Date().toISOString() })
     await store.notify('LSMoH', 'Results submitted', order.handlerName + ' is pending Ministry review')
     onRefresh()
   }
@@ -1039,6 +1192,7 @@ function LSMoHReview({ session, guard, audit }) {
       await audit('Approved, certificate issued, escrow release instructed to Sterling Bank', o.safeplateId)
       await store.notify('sterling', 'Escrow release instructed', o.safeplateId)
       await store.notify('all', 'Certificate issued', o.handlerName + ' is now certified')
+      await store.dispatch(o.phone, 'sms', 'SafePlate: your Certificate of Fitness is issued. Verify at ' + o.safeplateId)
     }
     refresh()
   }
@@ -1369,11 +1523,14 @@ function EmployerWater({ session }) {
   function toLab() { if (!f.facility.trim() || !f.officer.trim()) return; setStep('lab') }
   async function pay(lab) {
     setBusy(true)
-    await new Promise(r => setTimeout(r, 600))
+    let reference
+    try { const rr = await payWithPaystack({ email: session.email, amountNaira: WATER_FEE, reference: 'SPW-' + Date.now() }); reference = rr.reference } catch (e) { setBusy(false); return }
+    if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: 'water' }) }); if (!v.ok) { setBusy(false); return } }
     const swid = makeWaterId()
     await store.createWaterTest({ swid, facility: f.facility.trim(), lga: f.lga.trim(), source: f.source, officer: f.officer.trim(), contact: f.contact.trim(), lab: lab.name, amount: WATER_FEE, status: 'Submitted, pending LASEPA', results: { ph: '7.2', turbidity: '1.8 NTU', ecoli: '0 CFU/100ml' }, ownerEmail: session.email, ts: new Date().toISOString() })
     await store.createEscrow({ safeplateId: swid, name: f.facility.trim(), lab: lab.name, amount: WATER_FEE, status: 'HELD', type: 'WATER', ts: new Date().toISOString() })
     await store.notify('LASEPA', 'Water result submitted', f.facility.trim() + ' pending LASEPA review')
+    await store.dispatch(f.contact, 'sms', 'SafePlate: your ' + naira(WATER_FEE) + ' water test payment is confirmed for ' + f.facility.trim())
     set('swid', swid); setBusy(false); setStep('done'); load()
   }
 
@@ -1461,6 +1618,7 @@ function WaterReview({ session, guard, audit }) {
     await audit('Water result approved, certificate issued, 80/10/5/5 disbursed', w.swid)
     await store.notify(w.ownerEmail, 'Water certificate issued', w.facility + ' is now certified')
     await store.notify('all', 'Facility water certified', w.facility)
+    await store.dispatch(w.contact, 'sms', 'SafePlate: ' + w.facility + ' water certificate issued, ref ' + series)
     refresh()
   }
   async function flag(w) { await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); refresh() }
@@ -1504,8 +1662,8 @@ function WaterReview({ session, guard, audit }) {
 function FeesPage() {
   return (
     <div className="page"><div className="wrap">
-      <div className="kicker">Transparent fees</div>
-      <h2 className="sec serif">What you pay, and exactly where it goes</h2>
+      <div className="kicker">{t('fees_kicker')}</div>
+      <h2 className="sec serif">{t('fees_title')}</h2>
       <p className="sub">Every fee is fixed, held in escrow, and released only on approved results. The full split is published.</p>
       <div className="feesgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
         <div className="card">
@@ -1563,6 +1721,63 @@ function Analytics() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Motion + GDPR                                                       */
+/* ------------------------------------------------------------------ */
+
+function useCountUp(target, ms = 1100) {
+  const [v, setV] = useState(0)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setV(target); return }
+    let raf; const start = performance.now()
+    const step = now => { const p = Math.min(1, (now - start) / ms); setV(target * (1 - Math.pow(1 - p, 3))); if (p < 1) raf = requestAnimationFrame(step) }
+    raf = requestAnimationFrame(step); return () => cancelAnimationFrame(raf)
+  }, [target, ms])
+  return v
+}
+
+function ConsentBanner({ onPrivacy }) {
+  const [show, setShow] = useState(false)
+  useEffect(() => { try { setShow(!localStorage.getItem('safeplate:consent')) } catch { /* ignore */ } }, [])
+  function choose(v) { try { localStorage.setItem('safeplate:consent', v) } catch { /* ignore */ } setShow(false) }
+  if (!show) return null
+  return (
+    <div className="consent">
+      <div className="consent-in">
+        <div className="consent-txt"><b>Your privacy.</b> We use essential cookies and process personal and health data to deliver certification, under the Nigeria Data Protection Act 2023 and GDPR principles. <button className="lnk" onClick={onPrivacy}>Read the privacy notice</button>.</div>
+        <div className="consent-btns">
+          <button className="btn sm" onClick={() => choose('necessary')}>Necessary only</button>
+          <button className="btn p sm" onClick={() => choose('all')}>Accept all</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PrivacyModal({ open, onClose }) {
+  if (!open) return null
+  function erase() { try { Object.keys(localStorage).filter(k => k.indexOf('safeplate:') === 0).forEach(k => localStorage.removeItem(k)) } catch { /* ignore */ } onClose(); if (typeof window !== 'undefined') window.location.reload() }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal privacy" onClick={e => e.stopPropagation()}>
+        <div className="row-between" style={{ marginBottom: 6 }}>
+          <h3 className="serif" style={{ margin: 0, fontSize: 22 }}>Privacy notice</h3>
+          <button className="iconbtn" onClick={onClose} aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>How SafePlate handles your personal data, aligned with the Nigeria Data Protection Act 2023 and GDPR principles.</p>
+        <h4>Data controller</h4><p>Lagos State Ministry of Health, operator of SafePlate, with LASEPA and HEFAMAA as oversight bodies.</p>
+        <h4>What we process</h4><p>Identity and contact details, your SAFEPLATE ID, laboratory test results and certification status, and payment records. Test results are health data, a special category requiring extra protection.</p>
+        <h4>Lawful basis</h4><p>Performance of a public health task and a legal obligation under the NAFDAC Food Hygiene Regulation 2019, together with your explicit consent for processing health data.</p>
+        <h4>Retention</h4><p>Records are kept for the statutory public-health retention period, then deleted or anonymised.</p>
+        <h4>Your rights</h4><p>You may request access, rectification, erasure, restriction and portability, and object to processing. Certification decisions always remain subject to human review, never automated alone.</p>
+        <h4>Security and transfers</h4><p>Role-based access, encryption in transit and at rest, an append-only audit trail, and breach procedures. Data is hosted within approved jurisdictions.</p>
+        <h4>Contact</h4><p>Data Protection Officer, Lagos State Ministry of Health: dpo@safeplate.lagosstate.gov.ng.</p>
+        <div style={{ marginTop: 16 }}><button className="btn sm danger" onClick={erase}>Erase my data on this device</button></div>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  Root                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -1577,6 +1792,9 @@ export default function App() {
   const [tab, setTab] = useState('overview')
   const [mode, setMode] = useState('app') // app | auth
   const [verifyId, setVerifyId] = useState('')
+  const [lang, setLang] = useState(I18N.lang)
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  function changeLang(L) { I18N.lang = L; try { localStorage.setItem('safeplate:lang', L) } catch { /* ignore */ } setLang(L) }
 
   useEffect(() => { seedDemo() }, [])
   useEffect(() => {
@@ -1598,7 +1816,6 @@ export default function App() {
     if (!session) {
       if (tab === 'system') return <SystemPage />
       if (tab === 'impact') return <ImpactPage />
-      if (tab === 'fees') return <FeesPage />
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (session.role === 'food_handler') return <FoodHandlerModule session={session} />
@@ -1613,9 +1830,11 @@ export default function App() {
     <>
       <Styles />
       <GovBar />
-      <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} />
+      <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} />
       {page()}
-      <Footer />
+      <Footer onPrivacy={() => setPrivacyOpen(true)} />
+      <ConsentBanner onPrivacy={() => setPrivacyOpen(true)} />
+      <PrivacyModal open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
     </>
   )
 }

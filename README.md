@@ -70,3 +70,40 @@ npm run build
 ```
 
 You should see `built` with no errors.
+
+
+## Going live, step by step
+
+The app runs in preview with no backend. It switches to live automatically as each key is added, no code change.
+
+1. Create a Supabase project at supabase.com. Open the SQL editor and run the contents of `supabase/schema.sql`. This creates every table, enables row level security, makes the audit log append-only, and seeds the accredited laboratory list.
+2. In Supabase, open Project Settings then API. Copy the Project URL and the anon public key.
+3. Create a Paystack account at paystack.com. From Settings then API Keys, copy your public key and your secret key.
+4. Create a Termii account at termii.com. Copy your API key and register a sender ID.
+5. In Vercel, open your project then Settings then Environment Variables, and add:
+   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (frontend, safe to be public)
+   - `VITE_PAYSTACK_PUBLIC_KEY` (frontend, safe to be public)
+   - `PAYSTACK_SECRET_KEY` (server only)
+   - `TERMII_API_KEY` and `TERMII_SENDER_ID` (server only)
+   - `ANTHROPIC_API_KEY` (server only, for the AI Engine)
+6. Redeploy (Deployments tab, the three dots on the latest, Redeploy).
+
+Once the Supabase keys are present the app reads and writes the real database. Once the Paystack public key is present the real Paystack checkout opens and payments are verified server-side through `/api/paystack-verify`. Once the Termii key is present, `/api/notify` sends real SMS on payment and certificate events.
+
+Before real launch, tighten the row level security policies in `schema.sql` so each role and agency only sees its own rows, and move privileged writes (escrow release, audit log, certificate issuance) behind server-side Edge Functions using the service role key. Keep laboratory results encrypted at rest.
+
+## Languages
+
+The interface ships in English and Yoruba. Use the EN and YO toggle in the top banner to switch. The public entry pages and the food handler journey are translated; other portals fall back to English. To extend a translation, add the Yoruba string to the `STRINGS.yo` dictionary in `src/App.jsx` under the same key already used for English.
+
+## Note on payments and notifications
+
+- Payments use Paystack Inline. In preview a funded payment is simulated so the whole flow can be reviewed. With the public key set, the real card, transfer, USSD and mobile money popup opens.
+- Notifications are two layers: an in-app alerts bell for every role, and real SMS via Termii for the person directly affected (payment confirmed, certificate issued). SMS is sent only when the Termii key is configured, and fails silently in preview.
+
+
+## Interface and privacy (v1.2)
+
+- Refreshed, more dynamic UI: a decluttered top bar with the Lagos crest hard left, a compact action cluster (language, notifications, and an account menu), animated page transitions, count-up hero figures, and hover micro-interactions, kept restrained for an official platform.
+- Fees are no longer shown publicly. The fee and its waterfall appear only where a signed-in user is transacting or has oversight (the food handler payment step, the Sterling ledger, and regulator views). The public landing states only that the model is transparent and self-sustaining.
+- GDPR and NDPA 2023: a consent banner on first visit, a full privacy notice (controller, lawful basis including explicit consent for health data, retention, and data-subject rights) reachable from the footer and the account menu, and a self-service option to erase local data. Certification decisions remain subject to human review.
