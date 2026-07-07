@@ -112,3 +112,8 @@ The interface ships in English and Yoruba. Use the EN and YO toggle in the top b
 ## Go-live diagnostics
 
 After you deploy, open https://your-app-url/#/status. It checks, live, that the Supabase keys are set and every table is reachable, whether the Paystack public key is present, and whether the three serverless functions are deployed. Each row shows OK or Check, and a Check row tells you exactly what to fix.
+
+
+## Workspace switcher (LSMoH admin)
+
+LSMoH is the platform administrator. When you sign in as a Regulator with the LSMoH agency, a workspace switcher appears in the top bar. It lets you step into every portal (LASEPA, HEFAMAA, Approved Laboratory, Sterling Bank, Employer, Food Handler) and back to LSMoH without signing out. Your LSMoH identity is retained, each impersonated portal is labelled as an admin view, and any actions are still written to the audit trail under your name.

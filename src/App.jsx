@@ -375,6 +375,16 @@ const ROLES = [
   { id: 'sterling', code: 'SB', label: 'Sterling Bank', tag: 'Escrow management' }
 ]
 const AGENCIES = ['LSMoH', 'LASEPA', 'HEFAMAA']
+// LSMoH is the platform administrator and can step into any workspace.
+const WORKSPACES = [
+  { id: 'lsmoh', role: 'regulator', agency: 'LSMoH', label: 'LSMoH, Health oversight', short: 'LSMoH' },
+  { id: 'lasepa', role: 'regulator', agency: 'LASEPA', label: 'LASEPA, Environment', short: 'LASEPA' },
+  { id: 'hefamaa', role: 'regulator', agency: 'HEFAMAA', label: 'HEFAMAA, Accreditation', short: 'HEFAMAA' },
+  { id: 'laboratory', role: 'laboratory', agency: null, label: 'Approved Laboratory', short: 'Laboratory' },
+  { id: 'sterling', role: 'sterling', agency: null, label: 'Sterling Bank, Escrow', short: 'Sterling' },
+  { id: 'employer', role: 'employer', agency: null, label: 'Employer / Establishment', short: 'Employer' },
+  { id: 'food_handler', role: 'food_handler', agency: null, label: 'Food Handler', short: 'Food handler' }
+]
 const SANCTION_LADDER = ['Warning', 'Fine', 'Temporary closure', 'Loss of operating licence']
 const METRICS = [
   { k: 'Statewide compliance', v: '89.4%' },
@@ -606,6 +616,17 @@ function Styles() {
       .iconbtn:hover{border-color:var(--green);color:var(--green)}
       .iconbtn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid #fff}
       .iconbtn.lang svg{opacity:.7}
+      .wswrap{position:relative}
+      .wsbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;padding:0 11px;font-weight:700;font-size:12.5px;color:var(--navy);transition:.15s}
+      .wsbtn:hover{border-color:var(--navy)}
+      .wsbtn .chev{opacity:.55}
+      .wsmenu{position:absolute;left:0;top:46px;width:256px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);z-index:60;overflow:hidden;animation:pop .16s ease}
+      .wshead{padding:11px 14px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line)}
+      .wsitem{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:none;padding:10px 14px;font-size:13.5px;font-weight:600;color:var(--ink)}
+      .wsitem:hover{background:var(--green-pale)}
+      .wsitem.on{background:var(--green-pale);color:var(--green)}
+      .wsitem .wsdot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex:0 0 auto}
+      .wsitem.on .wsdot{background:var(--green)}
       .avwrap{position:relative}
       .avatar{width:38px;height:38px;border-radius:50%;border:0;background:var(--navy);color:#fff;font-family:'Lora',serif;font-weight:700;font-size:14px;cursor:pointer;transition:.15s}
       .avatar:hover{filter:brightness(1.15)}
@@ -666,9 +687,10 @@ function GovBar() {
   )
 }
 
-function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, lang, onLang, onPrivacy }) {
+function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, lang, onLang, onPrivacy, admin, workspace, onSwitch }) {
   const [bell, setBell] = useState(false)
   const [menu, setMenu] = useState(false)
+  const [ws, setWs] = useState(false)
   const [notices, setNotices] = useState([])
   const [scrolled, setScrolled] = useState(false)
   useEffect(() => { const on = () => setScrolled(window.scrollY > 4); on(); window.addEventListener('scroll', on); return () => window.removeEventListener('scroll', on) }, [])
@@ -686,6 +708,23 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
           {tabs.map(tb => (<button key={tb.id} className={'navtab ' + (active === tb.id ? 'on' : '')} onClick={() => onTab(tb.id)}>{tb.label}</button>))}
         </nav>
         <div className="actions">
+          {admin && (
+            <div className="wswrap">
+              <button className="wsbtn" onClick={() => { setWs(v => !v); setMenu(false); setBell(false) }} aria-label="Switch workspace">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5M2 12l10 5 10-5" /></svg>
+                <span>{(WORKSPACES.find(w => w.id === workspace) || WORKSPACES[0]).short}</span>
+                <svg className="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              {ws && (
+                <div className="wsmenu" onMouseLeave={() => setWs(false)}>
+                  <div className="wshead">Switch workspace</div>
+                  {WORKSPACES.map(w => (
+                    <button key={w.id} className={'wsitem ' + (w.id === workspace ? 'on' : '')} onClick={() => { onSwitch(w.id); setWs(false) }}><span className="wsdot" />{w.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button className="iconbtn lang" onClick={() => onLang(lang === 'en' ? 'yo' : 'en')} aria-label="Switch language">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
             <span>{lang.toUpperCase()}</span>
@@ -1850,6 +1889,7 @@ export default function App() {
   const [lang, setLang] = useState(I18N.lang)
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [special, setSpecial] = useState(null)
+  const [workspace, setWorkspace] = useState('lsmoh')
   function changeLang(L) { I18N.lang = L; try { localStorage.setItem('safeplate:lang', L) } catch { /* ignore */ } setLang(L) }
 
   useEffect(() => { seedDemo() }, [])
@@ -1858,13 +1898,16 @@ export default function App() {
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const tabs = tabsForSession(session)
-  useEffect(() => { if (!tabs.some(t => t.id === tab)) setTab(tabs[0].id) /* eslint-disable-next-line */ }, [session])
+  const isAdmin = Boolean(session && session.role === 'regulator' && session.agency === 'LSMoH')
+  const eff = isAdmin ? (() => { const w = WORKSPACES.find(x => x.id === workspace) || WORKSPACES[0]; return { ...session, role: w.role, agency: w.agency, title: w.id === 'lsmoh' ? session.title : roleTitle(w.role, w.agency) + ' (LSMoH admin view)' } })() : session
+  const tabs = tabsForSession(eff)
+  useEffect(() => { if (!tabs.some(t => t.id === tab)) setTab(tabs[0].id) /* eslint-disable-next-line */ }, [session, workspace])
+  function switchWorkspace(id) { const w = WORKSPACES.find(x => x.id === id) || WORKSPACES[0]; setWorkspace(id); setMode('app'); setSpecial(null); setTab(tabsForSession({ ...session, role: w.role, agency: w.agency })[0].id) }
 
   function onTab(id) { setMode('app'); if (id === 'verify') setVerifyId(''); setTab(id) }
   function onBrand() { setMode('app'); setTab(tabs[0].id); if (!session) { window.location.hash = '' } }
   function onAuthed(user) { setSession(user); setMode('app'); setTab(tabsForSession(user)[0].id) }
-  async function signOut() { await store.signOut(); setSession(null); setMode('app'); setTab('overview') }
+  async function signOut() { await store.signOut(); setSession(null); setMode('app'); setTab('overview'); setWorkspace('lsmoh') }
 
   function page() {
     if (special === 'status') return <StatusPage onHome={() => { window.location.hash = ''; setSpecial(null) }} />
@@ -1875,11 +1918,11 @@ export default function App() {
       if (tab === 'impact') return <ImpactPage />
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
-    if (session.role === 'food_handler') return <FoodHandlerModule session={session} />
-    if (session.role === 'laboratory') return <LaboratoryModule session={session} />
-    if (session.role === 'regulator') return <RegulatorModule session={session} tab={tab} />
-    if (session.role === 'sterling') return <SterlingModule session={session} tab={tab} />
-    if (session.role === 'employer') return <EmployerModule session={session} tab={tab} />
+    if (eff.role === 'food_handler') return <FoodHandlerModule session={eff} />
+    if (eff.role === 'laboratory') return <LaboratoryModule session={eff} />
+    if (eff.role === 'regulator') return <RegulatorModule session={eff} tab={tab} />
+    if (eff.role === 'sterling') return <SterlingModule session={eff} tab={tab} />
+    if (eff.role === 'employer') return <EmployerModule session={eff} tab={tab} />
     return null
   }
 
@@ -1887,7 +1930,7 @@ export default function App() {
     <>
       <Styles />
       <GovBar />
-      <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} />
+      <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} />
       {page()}
       <Footer onPrivacy={() => setPrivacyOpen(true)} />
       <ConsentBanner onPrivacy={() => setPrivacyOpen(true)} />
