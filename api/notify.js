@@ -7,6 +7,11 @@
 //   TERMII_API_KEY    your Termii API key
 //   TERMII_SENDER_ID  an approved Termii sender ID (defaults to "SafePlate")
 //
+// SafePlate messages are transactional (payment confirmed, certificate issued), so
+// this uses Termii's DND route. The DND route delivers at any hour and reaches
+// numbers on Do-Not-Disturb, but it must be activated on your Termii account first
+// (contact Termii support). If you ever need the generic route, change channel to 'generic'.
+//
 // Email is not sent through Termii SMS. To enable email, wire an email provider
 // (for example Resend or SendGrid) in the email branch below.
 
@@ -38,7 +43,7 @@ export default async function handler(req, res) {
         from: sender,
         sms: message,
         type: 'plain',
-        channel: 'generic',
+        channel: 'dnd',
         api_key: apiKey
       })
     })

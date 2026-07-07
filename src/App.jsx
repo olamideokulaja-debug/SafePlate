@@ -496,7 +496,7 @@ function Styles() {
       .hero p.lede{font-size:17px;color:var(--muted);margin:0 0 24px}
       .hero-cta{display:flex;gap:12px;flex-wrap:wrap}
       .hero-art{display:grid;place-items:center}
-      .hero-art img{width:210px;max-width:60vw;opacity:.96}
+      .hero-art img{width:264px;max-width:70vw;filter:drop-shadow(0 8px 22px rgba(6,20,14,.12))}
       .ticker{margin-top:26px;display:flex;gap:10px;flex-wrap:wrap}
       .chip{background:#fff;border:1px solid var(--line);border-radius:100px;padding:8px 14px;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
       .chip b{color:var(--ink);font-family:'Lora',serif}
