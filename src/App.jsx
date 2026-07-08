@@ -795,6 +795,7 @@ function Styles() {
       .jstep.now .jlabel{color:var(--green)}
       .jstep.done .jlabel{color:var(--ink)}
       .jnote{font-size:12.5px;margin-top:14px;line-height:1.5}
+      .btn.xs{padding:5px 11px;font-size:12px;border-radius:8px}
       .audsearch{margin-bottom:16px}
       .audsearch input{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;background:#fff}
       .audsearch input:focus{outline:none;border-color:var(--green)}
@@ -1624,27 +1625,49 @@ function LSMoHReview({ session, guard, audit }) {
 }
 
 function CertAdmin({ guard, audit }) {
-  const [id, setId] = useState('')
-  const [cert, setCert] = useState(undefined)
+  const [rows, setRows] = useState(null)
+  const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
-  async function find() { setBusy(true); setCert(await store.verifyCertificate(id) || null); setBusy(false) }
-  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; if (SUPABASE_READY) { await store.fn('revoke-certificate', { safeplateId: cid }); setCert(await store.verifyCertificate(cid)); return } await store.revokeCertificate(cid); await audit('Certificate revoked', cid); setCert(await store.verifyCertificate(cid)) }
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { const all = await store.listAllCertificates(); all.sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || ''))); setRows(all) }
+  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; setBusy(true); if (SUPABASE_READY) { await store.fn('revoke-certificate', { safeplateId: cid }) } else { await store.revokeCertificate(cid); await audit('Certificate revoked', cid) } await load(); setBusy(false) }
+  if (!rows) return <p className="muted">Loading certificates...</p>
+  const ql = q.trim().toLowerCase()
+  const key = c => ((c.safeplateId || c.safeplate_id || '') + ' ' + (c.name || '') + ' ' + (c.cert_no || c.certNo || c.series || '') + ' ' + (c.status || '') + ' ' + (c.lab || '')).toLowerCase()
+  const shown = rows.filter(c => !ql || key(c).includes(ql))
+  const counts = rows.reduce((a, c) => { a[c.status] = (a[c.status] || 0) + 1; return a }, {})
   return (
     <div>
-      <p className="muted" style={{ marginTop: 0 }}>Search any record by SAFEPLATE ID, then revoke a certificate if compliance requires it.</p>
-      <div className="field" style={{ maxWidth: 360 }}><label>SAFEPLATE ID</label><input value={id} onChange={e => setId(e.target.value)} placeholder="SP-LG-YYYYNNNNN" onKeyDown={e => e.key === 'Enter' && find()} /></div>
-      <button className="btn p sm" onClick={find} disabled={busy}>{busy ? 'Searching...' : 'Find record'}</button>
-      {cert === null && <div className="err" style={{ marginTop: 14 }}>No certificate found for that ID.</div>}
-      {cert && (
-        <div className="ord" style={{ marginTop: 16 }}>
-          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{cert.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{cert.safeplateId || cert.safeplate_id} · {cert.lab}</div></div><span className={'badge ' + cert.status}>{cert.status}</span></div>
-          <div className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>Panel: {cert.panel} · Expires {new Date(cert.expiry || cert.expiry_date).toLocaleDateString('en-GB')}</div>
-          {cert.status === 'VALID' && (
-            <div className="row-between" style={{ marginTop: 12 }}>
-              <button className="btn sm" onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
-              <button className="btn sm danger" onClick={() => guard('Revoke certificate ' + (cert.safeplateId || cert.safeplate_id), () => revoke(cert))}>Revoke certificate</button>
-            </div>
-          )}
+      <p className="muted" style={{ marginTop: 0 }}>Every Certificate of Fitness issued statewide. Search, download a copy, or revoke where compliance requires it.</p>
+      <div className="tiles" style={{ marginBottom: 14 }}>
+        <div className="tile"><div className="v">{rows.length}</div><div className="k">Certificates issued</div></div>
+        <div className="tile"><div className="v">{counts['VALID'] || 0}</div><div className="k">Valid</div></div>
+        <div className="tile"><div className="v">{counts['EXPIRED'] || 0}</div><div className="k">Expired</div></div>
+        <div className="tile"><div className="v">{counts['REVOKED'] || 0}</div><div className="k">Revoked</div></div>
+      </div>
+      <div className="audsearch" style={{ maxWidth: 460 }}><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by SAFEPLATE ID, name, certificate number or status..." /></div>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Showing {Math.min(shown.length, 200)} of {shown.length}{shown.length !== rows.length ? ' matching (' + rows.length + ' total)' : ' certificates'}.</div>
+      {shown.length === 0 && <div className="placeholder">No certificates match your search.</div>}
+      {shown.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="audit-tbl">
+            <thead><tr><th>SAFEPLATE ID</th><th>Name</th><th>Cert No</th><th>Laboratory</th><th>Issued</th><th>Expiry</th><th>Status</th><th></th></tr></thead>
+            <tbody>{shown.slice(0, 200).map((c, i) => { const cid = c.safeplateId || c.safeplate_id; const cno = c.cert_no || c.certNo || c.series || '\u2014'; return (
+              <tr key={cid + i}>
+                <td style={{ whiteSpace: 'nowrap' }}>{cid}</td>
+                <td>{c.name}</td>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }}>{cno}</td>
+                <td>{c.lab}</td>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }}>{c.issued ? new Date(c.issued).toLocaleDateString('en-GB') : '\u2014'}</td>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }}>{new Date(c.expiry || c.expiry_date).toLocaleDateString('en-GB')}</td>
+                <td><span className={'badge ' + c.status}>{c.status}</span></td>
+                <td><div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button className="btn xs" onClick={() => generateCertPDF(c)}>PDF</button>
+                  {c.status === 'VALID' && <button className="btn xs danger" onClick={() => guard('Revoke certificate ' + cid, () => revoke(c))} disabled={busy}>Revoke</button>}
+                </div></td>
+              </tr>
+            ) })}</tbody>
+          </table>
         </div>
       )}
     </div>
