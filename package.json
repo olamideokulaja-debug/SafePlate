@@ -1,7 +1,7 @@
 {
   "name": "safeplate",
   "private": true,
-  "version": "1.5.2",
+  "version": "1.6.0",
   "type": "module",
   "description": "SafePlate - Lagos State Unified Food Handler Safety and Compliance Platform (Stages 1-9, complete)",
   "scripts": {

@@ -719,6 +719,25 @@ function Styles() {
       .wsitem.on{background:var(--green-pale);color:var(--green)}
       .wsitem .wsdot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex:0 0 auto}
       .wsitem.on .wsdot{background:var(--green)}
+      .applayout{display:flex;align-items:flex-start}
+      .sidebar{width:240px;flex:0 0 240px;background:#fff;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column}
+      .sidebrand{display:flex;align-items:center;gap:11px;border:0;background:none;padding:8px 8px 16px;margin-bottom:8px;border-bottom:1px solid var(--line);cursor:pointer}
+      .sidenav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+      .sidelink{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;background:none;border-radius:10px;font-weight:600;font-size:14.5px;color:var(--muted);text-align:left;cursor:pointer;transition:background .15s,color .15s}
+      .sidelink svg{width:18px;height:18px;flex:0 0 18px;opacity:.75}
+      .sidelink:hover{background:var(--green-pale);color:var(--ink)}
+      .sidelink.on{background:var(--green-pale);color:var(--green)}
+      .sidelink.on svg{opacity:1}
+      .appmain{flex:1;min-width:0}
+      .apptop{display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#fff;border-bottom:1px solid var(--line);padding:0 22px;min-height:56px;position:sticky;top:0;z-index:30}
+      .hamburger{display:none;margin-right:auto;border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;align-items:center;justify-content:center;color:var(--ink);cursor:pointer}
+      .sidebackdrop{display:none}
+      @media (max-width:860px){
+        .sidebar{position:fixed;left:0;top:0;bottom:0;height:auto;z-index:70;transform:translateX(-100%);transition:transform .22s ease;box-shadow:0 10px 40px rgba(0,0,0,.18)}
+        .sidebar.open{transform:translateX(0)}
+        .hamburger{display:inline-flex}
+        .sidebackdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:65}
+      }
       .avwrap{position:relative}
       .avatar{width:38px;height:38px;border-radius:50%;border:0;background:var(--navy);color:#fff;font-family:'Lora',serif;font-weight:700;font-size:14px;cursor:pointer;transition:.15s}
       .avatar:hover{filter:brightness(1.15)}
@@ -850,6 +869,111 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
           ) : <button className="btn p sm" onClick={onSignIn}>{t('signin')}</button>}
         </div>
       </div></div>
+    </header>
+  )
+}
+
+function NavIcon({ id }) {
+  const paths = {
+    testing: <><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>,
+    verify: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></>,
+    queue: <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>,
+    team: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    water: <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />,
+    ledger: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>,
+    releases: <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
+    fund: <><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4z" /></>,
+    reconcile: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
+    enforcement: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+    audit: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></>,
+    accreditation: <><circle cx="12" cy="8" r="7" /><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" /></>,
+    review: <><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>,
+    certificates: <><circle cx="12" cy="8" r="6" /><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11" /></>,
+    analytics: <><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></>
+  }
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths[id] || <circle cx="12" cy="12" r="9" />}</svg>
+}
+
+function Sidebar({ tabs, active, onTab, onBrand, open, onClose }) {
+  return (
+    <>
+      <aside className={'sidebar' + (open ? ' open' : '')}>
+        <button className="sidebrand" onClick={() => { onBrand(); onClose() }}>
+          <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
+          <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>
+        </button>
+        <nav className="sidenav">
+          {tabs.map(tb => (
+            <button key={tb.id} className={'sidelink' + (active === tb.id ? ' on' : '')} onClick={() => { onTab(tb.id); onClose() }}>
+              <NavIcon id={tb.id} /><span>{tb.label}</span>
+            </button>
+          ))}
+        </nav>
+      </aside>
+      {open && <div className="sidebackdrop" onClick={onClose} />}
+    </>
+  )
+}
+
+function AppTopBar({ session, onSignOut, lang, onLang, onPrivacy, admin, workspace, onSwitch, onMenu }) {
+  const [bell, setBell] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const [ws, setWs] = useState(false)
+  const [notices, setNotices] = useState([])
+  useEffect(() => { if (session) store.listNotices(session).then(setNotices) }, [session, lang])
+  async function toggleBell() { if (!bell) setNotices(await store.listNotices(session)); setBell(v => !v); setMenu(false) }
+  const initials = (session && session.name ? session.name : '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <header className="apptop">
+      <button className="hamburger" onClick={onMenu} aria-label="Menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+      </button>
+      <div className="actions">
+        {admin && (
+          <div className="wswrap">
+            <button className="wsbtn" onClick={() => { setWs(v => !v); setMenu(false); setBell(false) }} aria-label="Switch workspace">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5M2 12l10 5 10-5" /></svg>
+              <span>{(WORKSPACES.find(w => w.id === workspace) || WORKSPACES[0]).short}</span>
+              <svg className="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+            {ws && (
+              <div className="wsmenu" onMouseLeave={() => setWs(false)}>
+                <div className="wshead">Switch workspace</div>
+                {WORKSPACES.map(w => (
+                  <button key={w.id} className={'wsitem ' + (w.id === workspace ? 'on' : '')} onClick={() => { onSwitch(w.id); setWs(false) }}><span className="wsdot" />{w.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <button className="iconbtn lang" onClick={() => onLang(lang === 'en' ? 'yo' : 'en')} aria-label="Switch language">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
+          <span>{lang.toUpperCase()}</span>
+        </button>
+        <div className="bellwrap">
+          <button className="iconbtn" onClick={toggleBell} aria-label="Notifications">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+            {notices.length > 0 && <i className="dot" />}
+          </button>
+          {bell && (
+            <div className="bellpanel" onMouseLeave={() => setBell(false)}>
+              <div className="bellhead">Notifications</div>
+              {notices.length === 0 && <div className="bellrow muted">No notifications yet.</div>}
+              {notices.map((n, i) => (<div className="bellrow" key={i}><b>{n.title}</b><div className="muted">{n.body}</div><div className="bellts">{new Date(n.ts).toLocaleString('en-GB')}</div></div>))}
+            </div>
+          )}
+        </div>
+        <div className="avwrap">
+          <button className="avatar" onClick={() => { setMenu(v => !v); setBell(false) }} aria-label="Account">{initials}</button>
+          {menu && (
+            <div className="avmenu" onMouseLeave={() => setMenu(false)}>
+              <div className="avhead"><b>{session.name}</b><small>{session.title}</small></div>
+              <button className="avitem" onClick={() => { setMenu(false); onPrivacy() }}>Privacy notice</button>
+              <button className="avitem danger" onClick={onSignOut}>{t('signout')}</button>
+            </div>
+          )}
+        </div>
+      </div>
     </header>
   )
 }
@@ -2034,6 +2158,7 @@ export default function App() {
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [special, setSpecial] = useState(null)
   const [workspace, setWorkspace] = useState('lsmoh')
+  const [navOpen, setNavOpen] = useState(false)
   function changeLang(L) { I18N.lang = L; try { localStorage.setItem('safeplate:lang', L) } catch { /* ignore */ } setLang(L) }
 
   useEffect(() => { seedDemo() }, [])
@@ -2075,9 +2200,22 @@ export default function App() {
     <>
       <Styles />
       <GovBar />
-      <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} />
-      {page()}
-      <Footer onPrivacy={() => setPrivacyOpen(true)} />
+      {session ? (
+        <div className="applayout">
+          <Sidebar tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} open={navOpen} onClose={() => setNavOpen(false)} />
+          <div className="appmain">
+            <AppTopBar session={session} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} onMenu={() => setNavOpen(v => !v)} />
+            {page()}
+            <Footer onPrivacy={() => setPrivacyOpen(true)} />
+          </div>
+        </div>
+      ) : (
+        <>
+          <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} />
+          {page()}
+          <Footer onPrivacy={() => setPrivacyOpen(true)} />
+        </>
+      )}
       <ConsentBanner onPrivacy={() => setPrivacyOpen(true)} />
       <PrivacyModal open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
     </>
