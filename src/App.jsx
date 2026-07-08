@@ -1659,9 +1659,10 @@ function CertAdmin({ guard, audit }) {
       {shown.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table className="audit-tbl">
-            <thead><tr><th>SAFEPLATE ID</th><th>Name</th><th>Cert No</th><th>Laboratory</th><th>Issued</th><th>Expiry</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Photo</th><th>SAFEPLATE ID</th><th>Name</th><th>Cert No</th><th>Laboratory</th><th>Issued</th><th>Expiry</th><th>Status</th><th></th></tr></thead>
             <tbody>{shown.slice(0, 200).map((c, i) => { const cid = c.safeplateId || c.safeplate_id; const cno = c.cert_no || c.certNo || c.series || '\u2014'; return (
               <tr key={cid + i}>
+                <td>{c.photo ? <img src={c.photo} alt="" style={{ width: 34, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)', display: 'block' }} /> : <span style={{ width: 34, height: 40, borderRadius: 6, background: 'var(--green-pale)', color: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{(c.name || '?').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase()}</span>}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{cid}</td>
                 <td>{c.name}</td>
                 <td className="muted" style={{ whiteSpace: 'nowrap' }}>{cno}</td>
