@@ -100,44 +100,77 @@ const DEMO = {
 
 function seedDemo() {
   const data = DEMO.read()
-  if (data.seeded) return
+  if (data.seedV3) return
   const now = Date.now(), day = 86400000
   const TESTS = ['Hepatitis A', 'Hepatitis E', 'Stool Microscopy & Culture (MC)']
-  data.users = data.users || {}
-  data.handlers = data.handlers || {}
-  data.orders = {
-    'ORD-2026-004821': { id: 'ORD-2026-004821', safeplateId: 'SP-LG-2026004821', handlerName: 'Adewale Babatunde Okonkwo', phone: '08031234821', lab: 'Lancet Ikeja', tests: TESTS, status: 'Scheduled', createdAt: new Date(now - 1 * day).toISOString() },
-    'ORD-2026-006721': { id: 'ORD-2026-006721', safeplateId: 'SP-LG-2026006721', handlerName: 'Bola Adeyemi', phone: '08037776721', lab: 'Lancet Ikeja', tests: TESTS, status: 'Sample Collected', createdAt: new Date(now - 2 * day).toISOString() },
-    'ORD-2026-006834': { id: 'ORD-2026-006834', safeplateId: 'SP-LG-2026006834', handlerName: 'Kemi Oladele', phone: '08039996834', lab: 'Synlab Victoria Island', tests: TESTS, status: 'Testing in Progress', createdAt: new Date(now - 3 * day).toISOString() }
+  const PANEL = 'Hepatitis A, Hepatitis E, Stool MC'
+  const FN = ['Adewale', 'Bola', 'Kemi', 'Ngozi', 'Chidinma', 'Emeka', 'Folake', 'Tunde', 'Yewande', 'Ifeoma', 'Segun', 'Amaka', 'Musa', 'Zainab', 'Uche', 'Damilola', 'Bisi', 'Kunle', 'Ronke', 'Obinna', 'Halima', 'Femi', 'Sola', 'Chinedu', 'Temitope', 'Aisha', 'Gbenga', 'Nneka', 'Ibrahim', 'Blessing', 'Fatima', 'Efe', 'Suleiman', 'Grace', 'Kayode']
+  const LN = ['Okonkwo', 'Adeyemi', 'Oladele', 'Okafor', 'Eze', 'Balogun', 'Bello', 'Ogundipe', 'Ibrahim', 'Nwosu', 'Adebayo', 'Chukwu', 'Yusuf', 'Ojo', 'Umeh', 'Lawal', 'Akinola', 'Danladi', 'Obi', 'Sani', 'Ayodele', 'Mohammed', 'Ekwueme', 'Adeniyi', 'Uzoma']
+  const LABS_A = ['Lancet Ikeja', 'Synlab Victoria Island', 'Clinix Surulere', 'Medbury Yaba']
+  const EMP = ['Mama Cass Kitchen', 'Sweet Sensation', 'Grill House', 'The Place', 'Chicken Republic', 'Ofada Heaven', 'Buka Express', 'Yellow Chilli', 'Cactus Restaurant', 'Terra Kulture Cafe']
+  const pick = (a, i) => a[((i % a.length) + a.length) % a.length]
+  const handlers = {}, orders = {}, escrow = {}, releases = [], certificates = {}
+  let n = 0
+  function person(yr, i) {
+    n++
+    const name = pick(FN, i) + ' ' + pick(LN, i * 3 + 1)
+    const id = 'SP-LG-' + yr + String(1000 + n).padStart(6, '0')
+    const oid = 'ORD-' + yr + '-' + String(1000 + n).padStart(6, '0')
+    const lab = pick(LABS_A, i)
+    const phone = '0803' + String(1000000 + (n * 7919 % 8999999)).slice(0, 7)
+    handlers[id] = { safeplateId: id, name, phone, lga: pick(LAGOS_LGAS, i), employer: pick(EMP, i), nin: '', createdAt: new Date(now - (2 + n % 200) * day).toISOString() }
+    return { id, oid, name, lab, phone }
   }
-  data.establishments = {
-    'EST-001': { id: 'EST-001', name: 'Mama Cass Kitchen, Ikeja', lga: 'Ikeja', compliance: 'Compliant', sanction: null, appeal: null },
-    'EST-002': { id: 'EST-002', name: 'Sweet Sensation, Yaba', lga: 'Yaba', compliance: 'Overdue', sanction: 'Warning', appeal: null },
-    'EST-003': { id: 'EST-003', name: 'Grill House, Lekki', lga: 'Lekki', compliance: 'Non-compliant', sanction: 'Fine', appeal: null }
-  }
-  data.escrow = {
-    'SP-LG-2026004821': { safeplateId: 'SP-LG-2026004821', name: 'Adewale Babatunde Okonkwo', lab: 'Lancet Ikeja', amount: 15000, status: 'HELD', ts: new Date(now - 1 * day).toISOString() },
-    'SP-LG-2026006721': { safeplateId: 'SP-LG-2026006721', name: 'Bola Adeyemi', lab: 'Lancet Ikeja', amount: 15000, status: 'HELD', ts: new Date(now - 2 * day).toISOString() },
-    'SP-LG-2025009003': { safeplateId: 'SP-LG-2025009003', name: 'Ngozi Okafor', lab: 'Synlab Victoria Island', amount: 15000, status: 'RELEASED', ts: new Date(now - 30 * day).toISOString(), releasedTs: new Date(now - 28 * day).toISOString(), releasedBy: 'Sterling Bank Officer' }
-  }
-  data.releases = [
-    { safeplateId: 'SP-LG-2026004821', name: 'Adewale Babatunde Okonkwo', lab: 'Lancet Ikeja', amount: 15000, status: 'Instructed', approvedBy: 'LSMoH Officer', ts: new Date(now - 1 * day).toISOString() }
-  ]
-  data.escrow['SP-W-LG-2026003007'] = { safeplateId: 'SP-W-LG-2026003007', name: 'Grill House, Lekki', lab: 'Synlab Victoria Island', amount: 65000, status: 'HELD', type: 'WATER', ts: new Date(now - 2 * day).toISOString() }
-  data.water = {
-    'SP-W-LG-2026003007': { swid: 'SP-W-LG-2026003007', facility: 'Grill House, Lekki', lga: 'Lekki', source: 'Borehole', officer: 'Tunde Bello', contact: '08033330007', lab: 'Synlab Victoria Island', amount: 65000, status: 'Submitted, pending LASEPA', results: { ph: '7.1', turbidity: '2.4 NTU', ecoli: '0 CFU/100ml' }, ownerEmail: 'seed', ts: new Date(now - 2 * day).toISOString() }
-  }
-  data.certificates = {
-    'SP-LG-2026004821': { safeplateId: 'SP-LG-2026004821', name: 'Adewale Babatunde Okonkwo', panel: 'Hepatitis A, Hepatitis E, Stool MC', lab: 'Lancet Ikeja', issued: new Date(now - 40 * day).toISOString(), expiry: new Date(now + 140 * day).toISOString(), status: 'VALID' },
-    'SP-LG-2025008114': { safeplateId: 'SP-LG-2025008114', name: 'Chidinma Eze', panel: 'Hepatitis A, Hepatitis E, Stool MC', lab: 'Synlab Victoria Island', issued: new Date(now - 220 * day).toISOString(), expiry: new Date(now - 40 * day).toISOString(), status: 'EXPIRED' },
-    'SP-LG-2026001990': { safeplateId: 'SP-LG-2026001990', name: 'Bola Adeyemi', panel: 'Hepatitis A, Hepatitis E, Stool MC', lab: 'Clinix Surulere', issued: new Date(now - 10 * day).toISOString(), expiry: new Date(now + 170 * day).toISOString(), status: 'REVOKED' }
-  }
-  data.audit = []
-  data.notices = [
+  const results = refer => { const r = {}; TESTS.forEach(t => r[t] = 'pass'); if (refer) r[TESTS[2]] = 'refer'; return r }
+  const lsh = k => 'LSH-2026-' + String(100 + k).padStart(6, '0')
+
+  for (let i = 0; i < 8; i++) { const q = person('2026', i); const rf = i === 3 || i === 6; orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, results: results(rf), status: 'Submitted', createdAt: new Date(now - (1 + i % 3) * day).toISOString() }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'HELD', type: 'FOOD', ts: new Date(now - (1 + i % 3) * day).toISOString() } }
+  const flows = ['Scheduled', 'Sample Collected', 'Testing in Progress']
+  for (let i = 0; i < 6; i++) { const q = person('2026', i + 20); orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, status: pick(flows, i), createdAt: new Date(now - (1 + i) * day).toISOString() }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'HELD', type: 'FOOD', ts: new Date(now - (1 + i) * day).toISOString() } }
+  for (let i = 0; i < 4; i++) { const q = person('2026', i + 40); orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, status: 'Approved', createdAt: new Date(now - (3 + i) * day).toISOString() }; certificates[q.id] = { safeplateId: q.id, name: q.name, panel: PANEL, lab: q.lab, cert_no: lsh(n), issued: new Date(now - i * day).toISOString(), expiry: new Date(now + (182 - i) * day).toISOString(), status: 'VALID' }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'HELD', type: 'FOOD', ts: new Date(now - (3 + i) * day).toISOString() }; releases.push({ safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'Instructed', approvedBy: 'LSMoH Officer', ts: new Date(now - i * day).toISOString() }) }
+  for (let i = 0; i < 12; i++) { const q = person('2026', i + 60); const iss = 20 + i * 5; orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, status: 'Approved', createdAt: new Date(now - iss * day).toISOString() }; certificates[q.id] = { safeplateId: q.id, name: q.name, panel: PANEL, lab: q.lab, cert_no: lsh(n), issued: new Date(now - iss * day).toISOString(), expiry: new Date(now + (182 - iss) * day).toISOString(), status: 'VALID' }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'RELEASED', type: 'FOOD', ts: new Date(now - iss * day).toISOString(), releasedTs: new Date(now - (iss - 2) * day).toISOString(), releasedBy: 'Sterling Bank Officer' }; releases.push({ safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'Released', approvedBy: 'LSMoH Officer', ts: new Date(now - (iss - 1) * day).toISOString() }) }
+  for (let i = 0; i < 3; i++) { const q = person('2026', i + 80); orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, results: results(true), status: 'Flagged', createdAt: new Date(now - (2 + i) * day).toISOString() }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'HELD', type: 'FOOD', ts: new Date(now - (2 + i) * day).toISOString() } }
+  for (let i = 0; i < 3; i++) { const q = person('2026', i + 90); orders[q.oid] = { id: q.oid, safeplateId: q.id, handlerName: q.name, phone: q.phone, lab: q.lab, tests: TESTS, results: results(true), status: 'Rejected', createdAt: new Date(now - (5 + i) * day).toISOString() }; escrow[q.id] = { safeplateId: q.id, name: q.name, lab: q.lab, amount: 15000, status: 'HELD', type: 'FOOD', ts: new Date(now - (5 + i) * day).toISOString() } }
+  for (let i = 0; i < 5; i++) { const q = person('2025', i + 100); certificates[q.id] = { safeplateId: q.id, name: q.name, panel: PANEL, lab: q.lab, cert_no: 'LSH-2025-' + String(300 + n).padStart(6, '0'), issued: new Date(now - (200 + i * 5) * day).toISOString(), expiry: new Date(now - (18 + i * 5) * day).toISOString(), status: 'EXPIRED' } }
+  for (let i = 0; i < 3; i++) { const q = person('2026', i + 110); certificates[q.id] = { safeplateId: q.id, name: q.name, panel: PANEL, lab: q.lab, cert_no: lsh(400 + n), issued: new Date(now - (30 + i * 5) * day).toISOString(), expiry: new Date(now + 150 * day).toISOString(), status: 'REVOKED' } }
+
+  const water = {}
+  const wf = [['Grill House, Lekki', 'Eti-Osa', 'Submitted, pending LASEPA', 'HELD'], ['Ocean Basket, VI', 'Eti-Osa', 'Certified', 'RELEASED'], ['Kada Plaza Eatery', 'Ikeja', 'Certified', 'RELEASED'], ['RForRabbit Cafe', 'Surulere', 'Flagged, retest required', 'HELD'], ['Blue Cabana', 'Eti-Osa', 'Submitted, pending LASEPA', 'HELD'], ['ICM Foodcourt', 'Ikeja', 'Certified', 'RELEASED'], ['Debonair Lounge', 'Yaba', 'Flagged, retest required', 'HELD'], ['Yellow Chilli, Ikeja', 'Ikeja', 'Submitted, pending LASEPA', 'HELD']]
+  wf.forEach((w, i) => { const swid = 'SP-W-LG-2026' + String(3000 + i).padStart(6, '0'); const lab = pick(LABS_A, i); const series = w[3] === 'RELEASED' ? 'SP-W-CERT-2026-' + String(500 + i).padStart(6, '0') : undefined; water[swid] = { swid, facility: w[0], lga: w[1], source: pick(['Borehole', 'Public mains', 'Water vendor'], i), officer: pick(FN, i) + ' ' + pick(LN, i), contact: '08033' + String(30000 + i * 111).slice(0, 5), lab, amount: 65000, status: w[2], results: { ph: (6.8 + (i % 5) * 0.1).toFixed(1), turbidity: (1 + i % 4) + '.2 NTU', ecoli: (w[2] === 'Flagged, retest required' ? (2 + i) : 0) + ' CFU/100ml' }, ownerEmail: 'seed', cert_series: series, ts: new Date(now - (2 + i) * day).toISOString() }; escrow[swid] = { safeplateId: swid, name: w[0], lab, amount: 65000, status: w[3], type: 'WATER', ts: new Date(now - (2 + i) * day).toISOString(), releasedTs: w[3] === 'RELEASED' ? new Date(now - i * day).toISOString() : undefined, releasedBy: w[3] === 'RELEASED' ? 'Sterling Bank Officer' : undefined }; if (w[3] === 'RELEASED') releases.push({ safeplateId: swid, name: w[0], lab, amount: 65000, status: 'Released', approvedBy: 'LASEPA Officer', ts: new Date(now - i * day).toISOString() }); if (w[2] === 'Certified') certificates[swid] = { safeplateId: swid, name: w[0], panel: 'Potable water quality', lab, series, issued: new Date(now - i * day).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID' } })
+
+  const est = {}
+  const ed = [['Mama Cass Kitchen, Ikeja', 'Ikeja', 'Compliant', null], ['Sweet Sensation, Yaba', 'Yaba', 'Overdue', 'Warning'], ['Grill House, Lekki', 'Eti-Osa', 'Non-compliant', 'Fine'], ['Buka Express, Surulere', 'Surulere', 'Compliant', null], ['Ofada Heaven, Ikorodu', 'Ikorodu', 'Overdue', 'Warning'], ['Cactus, VI', 'Eti-Osa', 'Compliant', null], ['The Place, Lekki', 'Eti-Osa', 'Non-compliant', 'Suspension'], ['Yellow Chilli, Ikeja', 'Ikeja', 'Compliant', null]]
+  ed.forEach((e, i) => { const id = 'EST-' + String(1 + i).padStart(3, '0'); est[id] = { id, name: e[0], lga: e[1], compliance: e[2], sanction: e[3], appeal: e[3] === 'Suspension' ? 'Under appeal' : null } })
+
+  const businesses = {}
+  businesses['employer@demo.ng'] = { name: 'Grill House Group', lga: 'Eti-Osa', staff: [
+    { id: 'S1', name: 'Adaeze Nwosu', phone: '08031110001', status: 'Certified' },
+    { id: 'S2', name: 'Bode Adekunle', phone: '08031110002', status: 'Certified' },
+    { id: 'S3', name: 'Chika Obi', phone: '08031110003', status: 'Pending results' },
+    { id: 'S4', name: 'Dami Lawal', phone: '08031110004', status: 'Pending results' },
+    { id: 'S5', name: 'Ejiro Efe', phone: '08031110005', status: 'Overdue' },
+    { id: 'S6', name: 'Femi Sanni', phone: '08031110006', status: 'Not registered' },
+    { id: 'S7', name: 'Grace Uche', phone: '08031110007', status: 'Not registered' }
+  ] }
+
+  const audit = []
+  const actors = [['Dr Ada Bello, LSMoH', 'LSMoH'], ['Engr Musa, LASEPA', 'LASEPA'], ['Mrs Ojo, HEFAMAA', 'HEFAMAA'], ['Sterling Bank Officer', 'Sterling Bank'], ['Lancet Ikeja Tech', 'laboratory']]
+  const acts = [['Approved, certificate issued, escrow release instructed', 0], ['Escrow released, full waterfall disbursed', 3], ['Results submitted (encrypted)', 4], ['Flagged for review, escrow held', 0], ['Certificate revoked', 0], ['Certificate verified via portal', 5], ['Signed in', 0], ['Water approved, certificate issued', 1], ['Accreditation status updated', 2], ['Sanction applied: Warning', 1]]
+  const certIds = Object.keys(certificates)
+  for (let i = 0; i < 64; i++) { const a = acts[i % acts.length]; const who = a[1] === 5 ? ['public', 'public'] : actors[a[1]]; const ts = new Date(now - Math.floor(Math.random() * 14) * day - Math.floor(Math.random() * 22) * 3600000).toISOString(); audit.push({ actor: who[0], role: who[1], action: a[0], subject: pick(certIds, i * 3 + 1), ts, ip: 'captured server-side' }) }
+  audit.sort((x, y) => (y.ts || '').localeCompare(x.ts || ''))
+
+  const notices = [
     { audience: 'all', title: 'SafePlate is live', body: 'Statewide food handler and water certification is now active.', ts: new Date(now - 1 * day).toISOString() },
-    { audience: 'LSMoH', title: 'Results awaiting review', body: 'Laboratory results are pending Ministry approval.', ts: new Date(now - 2 * 3600000).toISOString() }
+    { audience: 'LSMoH', title: 'Results awaiting review', body: '8 laboratory results are pending Ministry approval.', ts: new Date(now - 2 * 3600000).toISOString() },
+    { audience: 'sterling', title: 'Releases pending', body: '4 approved releases await execution.', ts: new Date(now - 5 * 3600000).toISOString() },
+    { audience: 'LASEPA', title: 'Water results', body: '3 facilities are pending LASEPA review.', ts: new Date(now - 8 * 3600000).toISOString() }
   ]
-  data.seeded = true
+
+  data.handlers = handlers; data.orders = orders; data.escrow = escrow; data.releases = releases
+  data.certificates = certificates; data.water = water; data.establishments = est
+  data.businesses = businesses; data.audit = audit; data.notices = notices
+  data.seedV3 = true
   DEMO.write(data)
 }
 
@@ -208,6 +241,10 @@ const store = {
   async issueCertificate(cert) {
     if (SUPABASE_READY) { const { error } = await supabase.from('certificates').upsert(toSnake(cert), { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return cert }
     const db = DEMO.read(); db.certificates = db.certificates || {}; db.certificates[cert.safeplateId] = cert; DEMO.write(db); return cert
+  },
+  async listAllCertificates() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('certificates').select('*'); return camelList(data) }
+    const db = DEMO.read(); return Object.values(db.certificates || {})
   },
   async revokeCertificate(id) {
     const clean = (id || '').trim().toUpperCase()
@@ -521,7 +558,7 @@ function tabsForSession(session) {
     case 'regulator':
       if (session.agency === 'LASEPA') return [{ id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
       if (session.agency === 'HEFAMAA') return [{ id: 'accreditation', label: t('nav_accreditation') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      return [{ id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'analytics', label: t('nav_analytics') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      return [{ id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
     default: return [{ id: 'verify', label: t('nav_verify') }]
   }
 }
@@ -540,6 +577,8 @@ function Styles() {
       h1,h2,h3,h4,.serif{font-family:'Lora',Georgia,serif}
       button{font-family:inherit;cursor:pointer}
       .wrap{max-width:1100px;margin:0 auto;padding:0 22px}
+      .hdr .wrap{max-width:none;padding:0 26px}
+      .sidebrand .wordmark b{white-space:nowrap}
       .govbar{background:var(--green);color:#fff;font-size:12.5px;letter-spacing:.02em}
       .govbar .wrap{display:flex;align-items:center;justify-content:space-between;min-height:36px;gap:12px;flex-wrap:wrap}
       .govbar .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-right:7px}
@@ -754,6 +793,26 @@ function Styles() {
       .jstep.now .jlabel{color:var(--green)}
       .jstep.done .jlabel{color:var(--ink)}
       .jnote{font-size:12.5px;margin-top:14px;line-height:1.5}
+      .audsearch{margin-bottom:16px}
+      .audsearch input{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;background:#fff}
+      .audsearch input:focus{outline:none;border-color:var(--green)}
+      .viewtog{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+      .viewtog button{border:0;background:#fff;padding:7px 15px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+      .viewtog button.on{background:var(--green-pale);color:var(--green)}
+      .audchips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+      .audchip{border:1px solid var(--line);background:#fff;border-radius:100px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+      .audchip.on{border-color:var(--green);background:var(--green-pale);color:var(--green)}
+      .audchip i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+      .timeline{position:relative;margin-top:4px}
+      .tlrow{display:flex;gap:14px;padding-bottom:18px;position:relative}
+      .tlrow:not(:last-child):before{content:'';position:absolute;left:17px;top:36px;bottom:0;width:2px;background:var(--line)}
+      .tldot{width:36px;height:36px;border-radius:50%;border:2px solid;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto;z-index:1}
+      .tldot svg{width:16px;height:16px}
+      .tlbody{flex:1;min-width:0;padding-top:3px}
+      .tltop{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+      .tltop b{font-size:14px;color:var(--ink);font-weight:600}
+      .tltime{font-size:12px;color:var(--muted);white-space:nowrap;flex:0 0 auto}
+      .tlmeta{font-size:12.5px;margin-top:3px}
       .applayout{display:flex;align-items:flex-start}
       .sidebar{width:240px;flex:0 0 240px;background:#fff;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column}
       .sidebrand{display:flex;align-items:center;gap:11px;border:0;background:none;padding:8px 8px 16px;margin-bottom:8px;border-bottom:1px solid var(--line);cursor:pointer}
@@ -936,7 +995,7 @@ function Sidebar({ tabs, active, onTab, onBrand, open, onClose }) {
       <aside className={'sidebar' + (open ? ' open' : '')}>
         <button className="sidebrand" onClick={() => { onBrand(); onClose() }}>
           <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
-          <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>
+          <span className="wordmark sideword"><b>Safe<span>Plate</span></b></span>
         </button>
         <nav className="sidenav">
           {tabs.map(tb => (
@@ -1504,12 +1563,11 @@ function RegulatorModule({ session, tab }) {
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
       {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
-      {tab === 'review' && <LSMoHReview session={session} guard={guard} audit={audit} />}
+      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <Enforcement guard={guard} audit={audit} />}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
-      {tab === 'analytics' && <Analytics />}
       {tab === 'audit' && <AuditPanel />}
       {modal}
     </div></div>
@@ -1631,8 +1689,27 @@ function Accreditation({ guard, audit }) {
   )
 }
 
+const AUDIT_CATS = {
+  'Approval': { color: CHART[0], icon: 'review', re: /approv|issued|certified/ },
+  'Flag / reject': { color: CHART[4], icon: 'enforcement', re: /flag|reject|refer|quarant|non-compl/ },
+  'Escrow': { color: CHART[3], icon: 'fund', re: /releas|disburse|escrow|fund/ },
+  'Revocation': { color: '#b3261e', icon: 'certificates', re: /revok/ },
+  'Regulatory': { color: CHART[2], icon: 'accreditation', re: /accredit|enforce|sanction|water/ },
+  'Access': { color: CHART[5], icon: 'verify', re: /sign|verif|decrypt|view|scan|login|attempt/ }
+}
+function auditCat(a) {
+  const str = (a || '').toLowerCase()
+  for (const name in AUDIT_CATS) if (AUDIT_CATS[name].re.test(str)) return { cat: name, color: AUDIT_CATS[name].color, icon: AUDIT_CATS[name].icon }
+  return { cat: 'Other', color: CHART[6], icon: 'audit' }
+}
+const auditCatColor = name => (AUDIT_CATS[name] && AUDIT_CATS[name].color) || CHART[6]
+function timeAgo(ts) { const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + 'm ago'; const h = Math.floor(m / 60); if (h < 24) return h + 'h ago'; return Math.floor(h / 24) + 'd ago' }
+
 function AuditPanel() {
   const [rows, setRows] = useState([])
+  const [view, setView] = useState('tracker')
+  const [filter, setFilter] = useState('all')
+  const [q, setQ] = useState('')
   useEffect(() => { store.listAudit().then(setRows) }, [])
   function exportTxt() {
     const header = 'timestamp\trole\tactor\taction\tsubject\tip'
@@ -1640,15 +1717,62 @@ function AuditPanel() {
     const blob = new Blob([[header].concat(body).join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'safeplate-audit-trail.txt'; a.click(); URL.revokeObjectURL(url)
   }
+  const cats = {}; rows.forEach(r => { const c = auditCat(r.action).cat; cats[c] = (cats[c] || 0) + 1 })
+  const catList = Object.keys(cats)
+  const actors = new Set(rows.map(r => r.actor)).size
+  const today = rows.filter(r => new Date(r.ts).toDateString() === new Date().toDateString()).length
+  const DAYS = 14
+  const byDay = new Array(DAYS).fill(0)
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0)
+  rows.forEach(r => { const d = new Date(r.ts); d.setHours(0, 0, 0, 0); const idx = DAYS - 1 - Math.round((midnight - d) / 86400000); if (idx >= 0 && idx < DAYS) byDay[idx]++ })
+  const dayLabels = byDay.map((_, i) => i === 0 ? '14d' : i === 7 ? '7d' : i === DAYS - 1 ? 'today' : '')
+  const ql = q.trim().toLowerCase()
+  const shown = rows.filter(r => (filter === 'all' || auditCat(r.action).cat === filter) && (!ql || (r.action + ' ' + r.actor + ' ' + (r.subject || '') + ' ' + r.role).toLowerCase().includes(ql)))
   return (
     <div>
-      <div className="row-between" style={{ marginBottom: 12 }}><div className="note" style={{ margin: 0 }}>Append-only. Entries cannot be edited or deleted. Actor, role, IP and timestamp are captured on every action.</div><button className="btn sm" onClick={exportTxt} disabled={!rows.length}>Export tamper-evident report</button></div>
+      <div className="row-between" style={{ marginBottom: 14 }}>
+        <div className="viewtog"><button className={view === 'tracker' ? 'on' : ''} onClick={() => setView('tracker')}>Tracker</button><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button></div>
+        <button className="btn sm" onClick={exportTxt} disabled={!rows.length}>Export tamper-evident report</button>
+      </div>
+      <div className="note" style={{ marginBottom: 16 }}>Append-only. Entries cannot be edited or deleted. Actor, role, IP and timestamp are captured on every action.</div>
       {rows.length === 0 && <div className="placeholder">No audit entries yet. Approvals, releases, enforcement and accreditation actions are logged here.</div>}
       {rows.length > 0 && (
-        <div style={{ overflowX: 'auto' }}><table className="audit-tbl">
-          <thead><tr><th>When</th><th>Actor</th><th>Role</th><th>Action</th><th>Subject</th></tr></thead>
-          <tbody>{rows.map((r, i) => (<tr key={i}><td className="muted">{new Date(r.ts).toLocaleString('en-GB')}</td><td>{r.actor}</td><td>{r.role}</td><td>{r.action}</td><td className="muted">{r.subject || ''}</td></tr>))}</tbody>
-        </table></div>
+        <>
+          <div className="tiles" style={{ marginBottom: 16 }}>
+            <div className="tile"><div className="v">{rows.length}</div><div className="k">Total events</div></div>
+            <div className="tile"><div className="v">{today}</div><div className="k">Logged today</div></div>
+            <div className="tile"><div className="v">{actors}</div><div className="k">Distinct actors</div></div>
+            <div className="tile"><div className="v">{catList.length}</div><div className="k">Action types</div></div>
+          </div>
+          <div className="audsearch"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by actor, action or SAFEPLATE ID..." /></div>
+          <div className="chartgrid">
+            <ChartCard title="Actions by type" hint="whole trail"><Bars data={catList.map(k => ({ label: k, value: cats[k], color: auditCatColor(k) }))} /></ChartCard>
+            <ChartCard title="Activity over time" hint="events per day, 14 days"><Line series={byDay} labels={dayLabels} /></ChartCard>
+          </div>
+          {view === 'tracker' && (
+            <>
+              <div className="audchips">
+                <button className={'audchip' + (filter === 'all' ? ' on' : '')} onClick={() => setFilter('all')}>All ({rows.length})</button>
+                {catList.map(k => <button key={k} className={'audchip' + (filter === k ? ' on' : '')} onClick={() => setFilter(k)}><i style={{ background: auditCatColor(k) }} />{k} ({cats[k]})</button>)}
+              </div>
+              {shown.length === 0 && <div className="placeholder">No events match your search or filter.</div>}
+              <div className="timeline">
+                {shown.map((r, i) => { const c = auditCat(r.action); return (
+                  <div className="tlrow" key={i}>
+                    <div className="tldot" style={{ borderColor: c.color, color: c.color }}><NavIcon id={c.icon} /></div>
+                    <div className="tlbody"><div className="tltop"><b>{r.action}</b><span className="tltime">{timeAgo(r.ts)}</span></div><div className="tlmeta muted">{r.actor} · {r.role}{r.subject ? ' · ' + r.subject : ''}</div></div>
+                  </div>
+                ) })}
+              </div>
+            </>
+          )}
+          {view === 'table' && (
+            <div style={{ overflowX: 'auto' }}><table className="audit-tbl">
+              <thead><tr><th>When</th><th>Actor</th><th>Role</th><th>Action</th><th>Subject</th></tr></thead>
+              <tbody>{shown.map((r, i) => (<tr key={i}><td className="muted">{new Date(r.ts).toLocaleString('en-GB')}</td><td>{r.actor}</td><td>{r.role}</td><td>{r.action}</td><td className="muted">{r.subject || ''}</td></tr>))}</tbody>
+            </table></div>
+          )}
+        </>
       )}
     </div>
   )
@@ -2176,46 +2300,33 @@ function FoodJourney({ step }) {
 }
 
 function Analytics() {
-  const [live, setLive] = useState({ n: 0, amt: 0 })
-  const [ins, setIns] = useState(null)
+  const [d, setD] = useState(null)
   useEffect(() => {
-    store.listEscrow().then(esc => { const rel = esc.filter(e => e.status === 'RELEASED'); setLive({ n: rel.length, amt: rel.reduce((a, e) => a + (e.amount || 0), 0) }) })
-    Promise.all([store.listAllOrders(), store.listEscrow(), store.listAllWaterTests()]).then(([orders, esc]) => {
+    Promise.all([store.listAllOrders(), store.listEscrow(), store.listAllWaterTests(), store.listAllCertificates()]).then(([orders, esc, water, certs]) => {
       const by = {}; orders.forEach(o => by[o.status || 'Scheduled'] = (by[o.status || 'Scheduled'] || 0) + 1)
+      const cby = {}; certs.forEach(c => cby[c.status || 'VALID'] = (cby[c.status || 'VALID'] || 0) + 1)
       const sum = a => a.reduce((x, e) => x + (e.amount || 0), 0)
-      setIns({ by, heldAmt: sum(esc.filter(e => e.status === 'HELD')), relAmt: sum(esc.filter(e => e.status === 'RELEASED')), food: esc.filter(e => e.type !== 'WATER').length, water: esc.filter(e => e.type === 'WATER').length })
+      const rel = esc.filter(e => e.status === 'RELEASED'), held = esc.filter(e => e.status === 'HELD')
+      setD({ by, cby, heldAmt: sum(held), relAmt: sum(rel), relN: rel.length, food: esc.filter(e => e.type !== 'WATER').length, water: esc.filter(e => e.type === 'WATER').length, valid: cby['VALID'] || 0, orders: orders.length, waterN: water.length })
     })
   }, [])
+  if (!d) return <p className="muted">Loading analytics...</p>
+  const certColor = k => k === 'VALID' ? CHART[0] : k === 'EXPIRED' ? CHART[1] : CHART[4]
   return (
     <div>
-      <div className="tiles" style={{ marginBottom: 18 }}>
-        <div className="tile"><div className="v">{live.n}</div><div className="k">Escrow releases (live)</div></div>
-        <div className="tile"><div className="v">{naira(live.amt)}</div><div className="k">Disbursed (live)</div></div>
-        <div className="tile"><div className="v">{naira(ECONOMICS.cumulative)}</div><div className="k">5-year projected revenue</div></div>
-        <div className="tile"><div className="v">6,500</div><div className="k">Eateries at full ramp</div></div>
+      <div className="tiles" style={{ marginBottom: 16 }}>
+        <div className="tile"><div className="v">{d.valid}</div><div className="k">Valid certificates</div></div>
+        <div className="tile"><div className="v">{d.orders}</div><div className="k">Total test orders</div></div>
+        <div className="tile"><div className="v">{d.relN}</div><div className="k">Escrow releases</div></div>
+        <div className="tile"><div className="v">{naira(d.relAmt)}</div><div className="k">Disbursed to date</div></div>
       </div>
-      {ins && (
-        <div className="chartgrid">
-          <ChartCard title="Programme revenue" hint="5-year projection"><Line series={ECONOMICS.total} labels={['Y1', 'Y2', 'Y3', 'Y4', 'Y5']} /></ChartCard>
-          <ChartCard title="Where a ₦15,000 fee goes" hint="five-way waterfall"><Donut center="₦15k" sub="per test" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, display: naira(w.amount), color: CHART[i % CHART.length] }))} /></ChartCard>
-          <ChartCard title="Testing pipeline" hint="live orders by status"><Bars data={Object.keys(ins.by).length ? Object.keys(ins.by).map((k, i) => ({ label: k, value: ins.by[k], color: statusColor(k) })) : [{ label: 'No orders yet', value: 0 }]} /></ChartCard>
-          <ChartCard title="Escrow held vs released" hint="by value"><Donut center={naira(ins.heldAmt + ins.relAmt)} sub="in system" data={[{ label: 'Held', value: ins.heldAmt || 0.0001, display: naira(ins.heldAmt), color: CHART[1] }, { label: 'Released', value: ins.relAmt || 0.0001, display: naira(ins.relAmt), color: CHART[0] }]} /></ChartCard>
-          <ChartCard title="Volume by type" hint="food vs water"><Bars data={[{ label: 'Food handler', value: ins.food, color: CHART[0] }, { label: 'Water facility', value: ins.water, color: CHART[3] }]} /></ChartCard>
-        </div>
-      )}
-      <h3 className="serif" style={{ fontSize: 18 }}>Five-year project economics</h3>
-      <div style={{ overflowX: 'auto' }}>
-        <table className="audit-tbl">
-          <thead><tr><th>Line</th>{ECONOMICS.years.map(y => <th key={y} style={{ textAlign: 'right' }}>{y}</th>)}</tr></thead>
-          <tbody>
-            <tr><td>Facility ramp</td>{ECONOMICS.ramp.map((r, i) => <td key={i} style={{ textAlign: 'right' }}>{r}</td>)}</tr>
-            <tr><td>Food handler fees</td>{ECONOMICS.food.map((v, i) => <td key={i} style={{ textAlign: 'right' }}>{naira(v)}</td>)}</tr>
-            <tr><td>Water fees</td>{ECONOMICS.water.map((v, i) => <td key={i} style={{ textAlign: 'right' }}>{naira(v)}</td>)}</tr>
-            <tr><td style={{ fontWeight: 700 }}>Total fees</td>{ECONOMICS.total.map((v, i) => <td key={i} style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'Lora,serif' }}>{naira(v)}</td>)}</tr>
-          </tbody>
-        </table>
+      <div className="chartgrid">
+        <ChartCard title="Certificates by status" hint="live"><Donut center={d.valid} sub="valid" data={Object.keys(d.cby).length ? Object.keys(d.cby).map(k => ({ label: k, value: d.cby[k], color: certColor(k) })) : [{ label: 'None yet', value: 1, color: 'var(--line)' }]} /></ChartCard>
+        <ChartCard title="Testing pipeline" hint="orders by status"><Bars data={Object.keys(d.by).length ? Object.keys(d.by).map(k => ({ label: k, value: d.by[k], color: statusColor(k) })) : [{ label: 'No orders', value: 0 }]} /></ChartCard>
+        <ChartCard title="Escrow held vs released" hint="by value"><Donut center={naira(d.heldAmt + d.relAmt)} sub="in system" data={[{ label: 'Held', value: d.heldAmt || 0.0001, display: naira(d.heldAmt), color: CHART[1] }, { label: 'Released', value: d.relAmt || 0.0001, display: naira(d.relAmt), color: CHART[0] }]} /></ChartCard>
+        <ChartCard title="Where a ₦15,000 fee goes" hint="five-way waterfall"><Donut center="₦15k" sub="per test" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, display: naira(w.amount), color: CHART[i % CHART.length] }))} /></ChartCard>
+        <ChartCard title="Volume by type" hint="food vs water"><Bars data={[{ label: 'Food handler', value: d.food, color: CHART[0] }, { label: 'Water facility', value: d.water, color: CHART[3] }]} /></ChartCard>
       </div>
-      <div className="note" style={{ marginTop: 14 }}>Cumulative 5-year programme revenue: <b>{naira(ECONOMICS.cumulative)}</b>, at facility ramp 25/50/75/100/100% across years, food handler and water fees combined.</div>
     </div>
   )
 }
