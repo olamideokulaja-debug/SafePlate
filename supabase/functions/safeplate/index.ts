@@ -45,6 +45,9 @@ async function decrypt(p: string) { const [i, c] = p.split(':'); const pt = awai
 async function sha256(s: string) { const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('') }
 
 const FEE = 15000
+// TEMPORARY: while Termii SMS is being fixed, skip the login OTP so staff can sign in.
+// Set this back to false to restore real 2FA once SMS works.
+const OTP_BYPASS = true
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -171,16 +174,21 @@ Deno.serve(async (req) => {
 
     // ---- Send a 2FA OTP over Termii ----
     if (action === 'send-otp') {
+      if (OTP_BYPASS) return json({ ok: true, sent: false, bypass: true })
       if (!me.phone) return json({ error: 'No registered phone on this account' }, 400)
       const code = String(Math.floor(100000 + Math.random() * 900000))
       await db.from('otp_codes').insert({ subject: me.id, code_hash: await sha256(code), expires_at: new Date(Date.now() + 5 * 60000).toISOString(), attempts: 0 })
       const key = Deno.env.get('TERMII_API_KEY')
-      if (key) await fetch('https://api.ng.termii.com/api/sms/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: me.phone, from: Deno.env.get('TERMII_SENDER_ID') || 'SafePlate', sms: 'Your SafePlate verification code is ' + code, type: 'plain', channel: 'dnd', api_key: key }) })
+      if (key) {
+        const tRes = await fetch('https://api.ng.termii.com/api/sms/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: me.phone, from: Deno.env.get('TERMII_SENDER_ID') || 'SafePlate', sms: 'Your SafePlate verification code is ' + code, type: 'plain', channel: 'generic', api_key: key }) })
+        console.log('TERMII_RESPONSE', tRes.status, await tRes.text())
+      }
       return json({ ok: true, sent: Boolean(key) })
     }
 
     // ---- Verify a 2FA OTP ----
     if (action === 'verify-otp') {
+      if (OTP_BYPASS) return json({ ok: true })
       const { data: row } = await db.from('otp_codes').select('*').eq('subject', me.id).order('ts', { ascending: false }).limit(1).maybeSingle()
       if (!row) return json({ ok: false, error: 'No code, request a new one' }, 400)
       if (new Date(row.expires_at).getTime() < Date.now()) return json({ ok: false, error: 'Code expired' }, 400)

@@ -552,8 +552,10 @@ function Styles() {
       .brand b span{color:var(--green)}
       .brand small{display:block;color:var(--muted);font-size:11px;letter-spacing:.03em;text-transform:uppercase}
       .navtabs{display:flex;gap:2px;flex-wrap:wrap;flex:1}
+      .bar.app .navtabs{flex:initial}
       .navtab{padding:9px 14px;border:0;background:none;font-weight:600;font-size:14px;color:var(--muted);border-radius:8px}
       .navtab.on{color:var(--green);background:var(--green-pale)}
+      .bar.app .actions:before{content:'';width:1px;height:24px;background:var(--line);margin:0 4px}
       .navtab:hover{color:var(--ink)}
       .who{display:flex;align-items:center;gap:12px;margin-left:auto}
       .who .nm{font-size:13px;text-align:right;line-height:1.2}
@@ -700,7 +702,8 @@ function Styles() {
       .navtab{position:relative;transition:color .18s,background .18s}
       .navtab:after{content:'';position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:var(--green);border-radius:2px;transform:scaleX(0);transition:transform .22s ease}
       .navtab.on:after{transform:scaleX(1)}
-      .actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+      .actions{display:flex;align-items:center;gap:10px;margin-left:auto}
+      .bar.app .actions{margin-left:0}
       .iconbtn{border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;min-width:38px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;justify-content:center;color:var(--ink);font-weight:700;font-size:12px;transition:.15s;position:relative}
       .iconbtn:hover{border-color:var(--green);color:var(--green)}
       .iconbtn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid #fff}
@@ -788,7 +791,7 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
   const initials = (session && session.name ? session.name : '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   return (
     <header className={'hdr' + (scrolled ? ' sc' : '')}>
-      <div className="wrap"><div className="bar">
+      <div className="wrap"><div className={'bar' + (session ? ' app' : '')}>
         <button className="brand" onClick={onBrand}>
           <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
           <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>

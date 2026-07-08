@@ -75,6 +75,20 @@ alter table otp_codes enable row level security;
 alter table login_attempts enable row level security;
 -- otp_codes and login_attempts have NO policies, so only the service role can touch them.
 
+-- Make this script safely re-runnable: drop the scoped policies before recreating.
+do $$
+declare p record;
+begin
+  for p in
+    select policyname, tablename from pg_policies where schemaname = 'public' and policyname in (
+      'fh_select','fh_insert','fh_update','to_select','to_insert','to_update','cert_public_read',
+      'escrow_read','releases_read','audit_select','est_select','est_update','lab_public_read',
+      'lab_update','biz_select','biz_write','water_select','water_insert','notif_select')
+  loop
+    execute format('drop policy if exists %I on %I;', p.policyname, p.tablename);
+  end loop;
+end $$;
+
 -- ------------------------------------------------------------------ --
 --  Scoped policies                                                   --
 -- ------------------------------------------------------------------ --
