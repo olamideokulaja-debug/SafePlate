@@ -119,17 +119,15 @@ After you deploy, open https://your-app-url/#/status. It checks, live, that the 
 LSMoH is the platform administrator. When you sign in as a Regulator with the LSMoH agency, a workspace switcher appears in the top bar. It lets you step into every portal (LASEPA, HEFAMAA, Approved Laboratory, Sterling Bank, Employer, Food Handler) and back to LSMoH without signing out. Your LSMoH identity is retained, each impersonated portal is labelled as an admin view, and any actions are still written to the audit trail under your name.
 
 
-## Security hardening (v1.4)
+## Security hardening (v1.4) — no terminal needed
 
-The app now runs privileged operations through a hardened backend. To deploy it:
+Deploy the hardened backend entirely from the Supabase dashboard:
 
-1. In the Supabase SQL editor run schema.sql, then run schema_hardened.sql. This replaces the permissive policies with deny-by-default, role- and ownership-scoped RLS, locks the sensitive tables to server-only writes, makes the audit log append-only, and creates the private results storage bucket.
-2. Generate a 32-byte encryption key and store it in Supabase Vault, then expose it to functions:
-   openssl rand -base64 32
-   supabase secrets set RESULT_ENC_KEY=<that value> SUPABASE_SERVICE_ROLE_KEY=<service role key> TERMII_API_KEY=<key> TERMII_SENDER_ID=SafePlate
-3. Deploy the Edge Functions:
-   supabase functions deploy submit-result approve-result approve-water release-escrow revoke-certificate decrypt-result send-otp verify-otp
-4. In Vercel add the server env vars SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (so /api/paystack-verify can record escrow), alongside the existing keys.
-5. Set account metadata: privileged accounts (Ministry, Sterling) need a phone claim for 2FA SMS, and laboratory accounts need a lab claim naming their laboratory. Turn Supabase email confirmations back on once testing is done.
+1. SQL editor: run schema.sql, then run schema_hardened.sql. This applies deny-by-default RLS, locks sensitive tables to server-only writes, makes the audit log append-only, and creates the private results storage bucket.
+2. Make the encryption key: double-click keygen.html (in this folder), click Copy.
+3. Edge Functions > Deploy a new function > Via Editor. Name it exactly "safeplate", delete the template code, paste all of supabase/functions/safeplate/index.ts, click Deploy.
+4. Edge Functions > Secrets: add RESULT_ENC_KEY (the copied key), TERMII_API_KEY, and TERMII_SENDER_ID (SafePlate). SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
+5. Vercel env vars: add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (so /api/paystack-verify can record escrow), alongside the existing keys.
+6. Account metadata (Authentication > Users): privileged accounts (Ministry, Sterling) need a phone claim for 2FA SMS; laboratory accounts need a lab claim naming their laboratory.
 
-Once connected, the client automatically routes result submission, approval, escrow release, revocation, and water approval through the Edge Functions, encrypts results at rest, requires a real SMS OTP for Ministry and Sterling logins, and enforces idle-timeout sessions. See SECURITY.md for the full design.
+All privileged operations run through the single "safeplate" Edge Function, routed by action. The client automatically uses it once the backend is connected: encrypted results, real SMS OTP for Ministry and Sterling logins, and idle-timeout sessions. See SECURITY.md for the full design.

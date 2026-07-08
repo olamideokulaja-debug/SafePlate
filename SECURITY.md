@@ -24,7 +24,7 @@ Row Level Security is deny-by-default on every table (`supabase/schema_hardened.
 
 ## 4. Privileged operations (Edge Functions)
 
-The operations that must not be client-trusted run as Supabase Edge Functions using the service role, each re-verifying the caller's JWT and role before acting (`supabase/functions/`):
+The operations that must not be client-trusted run through a single Supabase Edge Function ("safeplate"), routed by an action parameter, using the service role and re-verifying the caller's JWT and role before acting (`supabase/functions/safeplate/index.ts`):
 
 - `submit-result` — a laboratory submits results; the payload is encrypted before storage; accreditation mismatch quarantines the order.
 - `approve-result` — LSMoH approves, flags, or rejects; approval mints the LSMoH certificate number, issues the certificate, and instructs escrow release, atomically.

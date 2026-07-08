@@ -152,3 +152,13 @@ insert into storage.buckets (id, name, public) values ('results', 'results', fal
 on conflict (id) do nothing;
 -- No public policy: objects are reachable only through short-lived signed URLs
 -- minted by Edge Functions after a role check.
+
+-- ------------------------------------------------------------------ --
+--  Fuller registration fields (v1.5)                                  --
+-- ------------------------------------------------------------------ --
+alter table food_handlers add column if not exists dob date;
+alter table food_handlers add column if not exists gender text;
+alter table food_handlers add column if not exists address text;
+alter table food_handlers add column if not exists lga text;
+alter table food_handlers add column if not exists employer_address text;
+alter table food_handlers add column if not exists photo text;

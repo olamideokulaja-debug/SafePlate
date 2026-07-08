@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SafePlate — Encryption Key Generator</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef4ee;color:#12241f;display:grid;place-items:center;min-height:100vh;margin:0;padding:20px}
+  .card{background:#fff;border:1px solid #e3e7e4;border-radius:16px;padding:28px;max-width:540px;width:100%;box-shadow:0 10px 30px rgba(6,20,14,.08)}
+  h1{font-size:20px;margin:0 0 6px}
+  p{color:#5b6b64;font-size:14px;margin:0 0 16px;line-height:1.55}
+  .key{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;background:#f6f8f6;border:1px solid #e3e7e4;border-radius:10px;padding:14px;word-break:break-all;user-select:all}
+  .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  button{border:0;border-radius:9px;padding:11px 16px;font-weight:600;font-size:14px;cursor:pointer}
+  .p{background:#006600;color:#fff}
+  .s{background:#fff;border:1px solid #e3e7e4;color:#12241f}
+  .ok{color:#006600;font-weight:600;font-size:13px;margin-top:10px;min-height:18px}
+  .note{margin-top:18px;font-size:12.5px;color:#5b6b64;background:#fdf3e0;border:1px solid #f2dcae;border-radius:10px;padding:12px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>SafePlate encryption key</h1>
+    <p>This makes the secret key that protects test results (RESULT_ENC_KEY). It is created here in your browser and never sent anywhere. Click Copy, then paste it into Supabase as a secret.</p>
+    <div class="key" id="key"></div>
+    <div class="row">
+      <button class="p" onclick="copyKey()">Copy key</button>
+      <button class="s" onclick="gen()">Generate a new one</button>
+    </div>
+    <div class="ok" id="ok"></div>
+    <div class="note">Keep this key safe and private. If you lose it after go-live, previously encrypted results can no longer be read. Generate it once, copy it into Supabase, and store a backup somewhere secure.</div>
+  </div>
+<script>
+  function gen(){
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const b64 = btoa(String.fromCharCode.apply(null, bytes));
+    document.getElementById('key').textContent = b64;
+    document.getElementById('ok').textContent = '';
+  }
+  function copyKey(){
+    const t = document.getElementById('key').textContent;
+    navigator.clipboard.writeText(t).then(function(){
+      document.getElementById('ok').textContent = 'Copied. Now paste it into Supabase as RESULT_ENC_KEY.';
+    }, function(){
+      document.getElementById('ok').textContent = 'Select the key above and copy it manually.';
+    });
+  }
+  gen();
+</script>
+</body>
+</html>

@@ -16,6 +16,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@supabase/supabase-js'
+import { jsPDF } from 'jspdf'
+import QRCode from 'qrcode'
 
 /* ------------------------------------------------------------------ */
 /*  Configuration and backend abstraction                              */
@@ -308,7 +310,8 @@ const store = {
     if (!SUPABASE_READY) throw new Error('A connected backend is required for this action')
     const { data } = await supabase.auth.getSession()
     const token = data && data.session ? data.session.access_token : SUPABASE_ANON_KEY
-    const res = await fetch(SUPABASE_URL + '/functions/v1/' + name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY }, body: JSON.stringify(body || {}) })
+    // All privileged actions go to one Edge Function ("safeplate"), routed by action.
+    const res = await fetch(SUPABASE_URL + '/functions/v1/safeplate', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY }, body: JSON.stringify({ action: name, ...(body || {}) }) })
     const out = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(out.error || 'Action failed')
     return out
@@ -349,6 +352,67 @@ const BURDEN = [
 ]
 
 const MANDATORY_TESTS = ['Hepatitis A', 'Hepatitis E', 'Stool Microscopy & Culture (MC)']
+
+const LAGOS_LGAS = ['Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere']
+
+// Compress a photo to <= ~200KB and return a JPEG data URL.
+function compressImage(file, maxKB = 200) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width, h = img.height, maxDim = 640
+        if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim }
+        else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim }
+        const c = document.createElement('canvas'); c.width = w; c.height = h
+        c.getContext('2d').drawImage(img, 0, 0, w, h)
+        let q = 0.8, out = c.toDataURL('image/jpeg', q)
+        while (out.length > maxKB * 1024 * 1.37 && q > 0.3) { q -= 0.1; out = c.toDataURL('image/jpeg', q) }
+        resolve(out)
+      }
+      img.onerror = reject; img.src = e.target.result
+    }
+    reader.onerror = reject; reader.readAsDataURL(file)
+  })
+}
+
+async function fetchDataUrl(url) {
+  const r = await fetch(url); const b = await r.blob()
+  return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b) })
+}
+
+// Build and download a Certificate of Fitness PDF.
+async function generateCertPDF(cert) {
+  const id = cert.safeplateId || cert.safeplate_id
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight()
+  doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.rect(28, 28, W - 56, H - 56)
+  doc.setDrawColor(251, 174, 64); doc.setLineWidth(0.7); doc.rect(36, 36, W - 72, H - 72)
+  try { const crest = await fetchDataUrl('/lagos-logo.png'); doc.addImage(crest, 'PNG', W / 2 - 42, 52, 84, 84) } catch (e) { /* ignore */ }
+  doc.setFont('times', 'bold'); doc.setTextColor(0, 51, 102); doc.setFontSize(16)
+  doc.text('Lagos State Ministry of Health', W / 2, 162, { align: 'center' })
+  doc.setFontSize(22); doc.setTextColor(0, 102, 0)
+  doc.text('Certificate of Fitness', W / 2, 192, { align: 'center' })
+  doc.setFont('times', 'normal'); doc.setFontSize(11); doc.setTextColor(90, 107, 100)
+  doc.text('SafePlate, Food Handler Safety and Compliance', W / 2, 212, { align: 'center' })
+  let y = 262
+  const row = (label, val) => { doc.setFont('times', 'bold'); doc.setTextColor(18, 36, 31); doc.setFontSize(12); doc.text(label, 70, y); doc.setFont('times', 'normal'); doc.text(String(val || '-'), 240, y); y += 27 }
+  row('Name', cert.name)
+  row('SAFEPLATE ID', id)
+  row('Certificate No', cert.cert_no || cert.certNo || cert.series || '-')
+  row('Test panel', cert.panel)
+  row('Issued', cert.issued ? new Date(cert.issued).toLocaleDateString('en-GB') : '-')
+  row('Expires', new Date(cert.expiry || cert.expiry_date).toLocaleDateString('en-GB'))
+  y += 8; doc.setFont('times', 'bold'); doc.setFontSize(14); doc.setTextColor(0, 102, 0)
+  doc.text('STATUS: FIT FOR FOOD HANDLING', 70, y)
+  try { const qr = await QRCode.toDataURL(window.location.origin + '/#/verify/' + id, { margin: 1, width: 170 }); doc.addImage(qr, 'PNG', W - 196, 250, 126, 126) } catch (e) { /* ignore */ }
+  doc.setFont('times', 'normal'); doc.setFontSize(10); doc.setTextColor(90, 107, 100)
+  doc.text('Verify at ' + window.location.origin + '/#/verify/' + id, 70, H - 96)
+  doc.text('Report a concern: 0800-SAFE-PLATE (LASEPA)', 70, H - 80)
+  doc.text('Issued under the NAFDAC Food Hygiene Regulation 2019. Biannual renewal required.', 70, H - 64)
+  doc.save('SafePlate-Certificate-' + id + '.pdf')
+}
 
 const LABS = [
   { id: 'lancet-ikeja', name: 'Lancet Ikeja', area: 'Ikeja', turnaround: '48 hours', accredited: true, mobile: true, accNo: 'HEF-LAB-0142' },
@@ -916,7 +980,9 @@ function VerifyWidget({ initialId }) {
             <div>Panel: {result.panel}</div>
             <div>Laboratory: {result.lab}</div>
             <div>Expires: {new Date(result.expiry || result.expiry_date).toLocaleDateString('en-GB')}</div>
-          </div></div>
+          </div>
+          {result.status === 'VALID' && <button className="btn g block" style={{ marginTop: 14 }} onClick={() => generateCertPDF(result)}>Download certificate (PDF)</button>}
+        </div>
       )}
     </div>
   )
@@ -1046,7 +1112,7 @@ const STEP_LABELS = ['Register', 'Tests', 'Laboratory', 'Payment', 'Done']
 
 function FoodHandlerModule({ session }) {
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState({ name: session.name || '', phone: '', nin: '', email: session.email || '', employer: '', safeplateId: '', lab: null, paid: false })
+  const [form, setForm] = useState({ name: session.name || '', phone: '', dob: '', gender: '', address: '', lga: '', nin: '', email: session.email || '', employer: '', employerAddress: '', photo: '', safeplateId: '', lab: null, paid: false })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -1055,6 +1121,7 @@ function FoodHandlerModule({ session }) {
   async function register() {
     setErr('')
     if (!form.name.trim() || !form.phone.trim()) { setErr('Name and phone number are required to register.'); return }
+    if (!form.dob || !form.gender || !form.lga) { setErr('Date of birth, gender and LGA are required.'); return }
     if (!/^0?\d{10,11}$/.test(form.phone.replace(/\s+/g, ''))) { setErr('Enter a valid Nigerian phone number.'); return }
     setBusy(true)
     try {
@@ -1074,7 +1141,7 @@ function FoodHandlerModule({ session }) {
       if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId, escrow: escrowPayload }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
-      await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, nin: form.nin, email: form.email, employer: form.employer, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, createdAt: new Date().toISOString() })
+      await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, createdAt: new Date().toISOString() })
       await store.createOrder({ id: 'ORD-' + form.safeplateId.replace('SP-LG-', ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
       if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
@@ -1096,9 +1163,17 @@ function FoodHandlerModule({ session }) {
           <p className="muted" style={{ marginTop: 4 }}>Your details are verified and you receive a unique, traceable ID.</p>
           <div className="field"><label>{t('lbl_fullname')}</label><input value={form.name} onChange={e => setF('name', e.target.value)} placeholder="First and last name" /></div>
           <div className="field"><label>{t('lbl_phone')}</label><input value={form.phone} onChange={e => setF('phone', e.target.value)} placeholder="080..." /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="field"><label>Date of birth</label><input type="date" value={form.dob} onChange={e => setF('dob', e.target.value)} /></div>
+            <div className="field"><label>Gender</label><select value={form.gender} onChange={e => setF('gender', e.target.value)}><option value="">Select...</option><option>Female</option><option>Male</option><option>Prefer not to say</option></select></div>
+          </div>
+          <div className="field"><label>Home address</label><input value={form.address} onChange={e => setF('address', e.target.value)} placeholder="Street and area" /></div>
+          <div className="field"><label>LGA</label><select value={form.lga} onChange={e => setF('lga', e.target.value)}><option value="">Select your LGA...</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
           <div className="field"><label>{t('lbl_nin')}</label><input value={form.nin} onChange={e => setF('nin', e.target.value)} placeholder="11-digit NIN" /></div>
           <div className="field"><label>{t('lbl_email')}</label><input value={form.email} onChange={e => setF('email', e.target.value)} placeholder="you@example.com" /></div>
           <div className="field"><label>{t('lbl_employer')}</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
+          <div className="field"><label>Employer address (optional)</label><input value={form.employerAddress} onChange={e => setF('employerAddress', e.target.value)} placeholder="Where you work" /></div>
+          <div className="field"><label>Passport photo (optional)</label><input type="file" accept="image/*" onChange={async e => { const f = e.target.files && e.target.files[0]; if (f) { try { setF('photo', await compressImage(f)) } catch { /* ignore */ } } }} />{form.photo && <img src={form.photo} alt="preview" style={{ marginTop: 8, width: 72, height: 72, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />}</div>
           <button className="btn p block" onClick={register} disabled={busy}>{busy ? 'Checking...' : t('btn_create_id')}</button>
         </div>
       )}
@@ -1338,7 +1413,12 @@ function CertAdmin({ guard, audit }) {
         <div className="ord" style={{ marginTop: 16 }}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{cert.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{cert.safeplateId || cert.safeplate_id} · {cert.lab}</div></div><span className={'badge ' + cert.status}>{cert.status}</span></div>
           <div className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>Panel: {cert.panel} · Expires {new Date(cert.expiry || cert.expiry_date).toLocaleDateString('en-GB')}</div>
-          {cert.status === 'VALID' && <button className="btn sm danger" style={{ marginTop: 12 }} onClick={() => guard('Revoke certificate ' + (cert.safeplateId || cert.safeplate_id), () => revoke(cert))}>Revoke certificate</button>}
+          {cert.status === 'VALID' && (
+            <div className="row-between" style={{ marginTop: 12 }}>
+              <button className="btn sm" onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
+              <button className="btn sm danger" onClick={() => guard('Revoke certificate ' + (cert.safeplateId || cert.safeplate_id), () => revoke(cert))}>Revoke certificate</button>
+            </div>
+          )}
         </div>
       )}
     </div>
