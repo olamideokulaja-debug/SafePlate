@@ -301,7 +301,32 @@ const store = {
   async ping(table) {
     if (!SUPABASE_READY) return { ok: false, error: 'Supabase keys not set' }
     try { const { error } = await supabase.from(table).select('*', { count: 'exact', head: true }); if (error) return { ok: false, error: error.message }; return { ok: true } } catch (e) { return { ok: false, error: String(e) } }
+  },
+  async fn(name, body) {
+    // Call a Supabase Edge Function with the caller's access token. Privileged
+    // operations (approve, release, revoke, submit-result) run only here in live mode.
+    if (!SUPABASE_READY) throw new Error('A connected backend is required for this action')
+    const { data } = await supabase.auth.getSession()
+    const token = data && data.session ? data.session.access_token : SUPABASE_ANON_KEY
+    const res = await fetch(SUPABASE_URL + '/functions/v1/' + name, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY }, body: JSON.stringify(body || {}) })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(out.error || 'Action failed')
+    return out
   }
+}
+
+// Client-side idle timeout: 15 min for Ministry/Sterling, 30 min otherwise.
+function useIdleTimeout(session, onTimeout) {
+  useEffect(() => {
+    if (!session) return
+    const mins = ['regulator', 'sterling'].includes(session.role) ? 15 : 30
+    let timer
+    const reset = () => { clearTimeout(timer); timer = setTimeout(onTimeout, mins * 60000) }
+    const evts = ['mousedown', 'keydown', 'scroll', 'touchstart']
+    evts.forEach(e => window.addEventListener(e, reset)); reset()
+    return () => { clearTimeout(timer); evts.forEach(e => window.removeEventListener(e, reset)) }
+    // eslint-disable-next-line
+  }, [session])
 }
 
 /* ------------------------------------------------------------------ */
@@ -872,6 +897,7 @@ function VerifyWidget({ initialId }) {
     const q = (value ?? id).trim()
     if (!q) return
     setLoading(true); setResult(await store.verifyCertificate(q) || null); setLoading(false)
+    try { store.appendAudit({ actor: 'public', role: 'public', action: 'Certificate verified via portal', subject: q }) } catch { /* ignore */ }
   }
   return (
     <div className="verify-panel">
@@ -931,15 +957,44 @@ function AuthFlow({ onDone, onBack }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [otpStage, setOtpStage] = useState(false)
+  const [otpVal, setOtpVal] = useState('')
+  const [pendingUser, setPendingUser] = useState(null)
   const needs2fa = role && ['regulator', 'sterling'].includes(role.id)
+
+  async function verifyOtp() {
+    setErr(''); setBusy(true)
+    try { await store.fn('verify-otp', { code: otpVal }); onDone(pendingUser) }
+    catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
 
   async function submit() {
     setErr(''); setBusy(true)
     try {
       const meta = { role: role.id, agency: role.id === 'regulator' ? agency : null, name: name || email.split('@')[0], title: roleTitle(role.id, agency) }
       const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password)
-      onDone({ ...user, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name })
+      const finalUser = { ...user, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
+      if (SUPABASE_READY && ['regulator', 'sterling'].includes(finalUser.role)) {
+        await store.fn('send-otp', {}); setPendingUser(finalUser); setOtpStage(true); setBusy(false); return
+      }
+      onDone(finalUser)
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  if (otpStage) {
+    return (
+      <div className="page"><div className="wrap center-narrow">
+        <div className="card">
+          <div className="kicker" style={{ color: 'var(--green)' }}>Two-factor authentication</div>
+          <h3 className="serif" style={{ fontSize: 22, margin: '6px 0 4px' }}>Enter your verification code</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>We sent a 6-digit code by SMS to the phone registered to this {pendingUser && pendingUser.title} account.</p>
+          {err && <div className="err">{err}</div>}
+          <div className="field"><input value={otpVal} onChange={e => setOtpVal(e.target.value)} placeholder="6-digit code" maxLength={6} /></div>
+          <button className="btn p block" onClick={verifyOtp} disabled={busy || !/^[0-9]{6}$/.test(otpVal)}>{busy ? 'Verifying...' : 'Verify and continue'}</button>
+          <button className="btn ghost block" style={{ marginTop: 8 }} onClick={() => { setOtpStage(false); setOtpVal('') }}>Cancel</button>
+        </div>
+      </div></div>
+    )
   }
 
   if (!role) {
@@ -1014,13 +1069,14 @@ function FoodHandlerModule({ session }) {
   async function pay() {
     setErr(''); setBusy(true)
     try {
+      const escrowPayload = { safeplateId: form.safeplateId, name: form.name, lab: form.lab.name, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() }
       const { reference } = await payWithPaystack({ email: form.email, amountNaira: FEE, reference: 'SP-' + form.safeplateId })
-      if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId }) }); if (!v.ok) throw new Error('Payment verification failed') }
+      if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId, escrow: escrowPayload }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
       await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, nin: form.nin, email: form.email, employer: form.employer, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, createdAt: new Date().toISOString() })
       await store.createOrder({ id: 'ORD-' + form.safeplateId.replace('SP-LG-', ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
-      await store.createEscrow({ safeplateId: form.safeplateId, name: form.name, lab: form.lab.name, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
+      if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
       await store.notify(session.email, 'Payment received', naira(FEE) + ' held in escrow for your test')
       await store.dispatch(form.phone, 'sms', 'SafePlate: your ' + naira(FEE) + ' test payment is confirmed. ID ' + form.safeplateId)
@@ -1141,6 +1197,7 @@ function OrderCard({ order, lab, onAdvance, onRefresh }) {
   async function submit() {
     setErr('')
     if (order.tests.some(t => !results[t]) || !tech.trim() || !accNo.trim()) { setErr('Enter a result for every test, plus technician ID and accreditation number.'); return }
+    if (SUPABASE_READY) { try { await store.fn('submit-result', { orderId: order.id, results, technicianId: tech.trim(), accreditationNumber: accNo.trim() }); onRefresh(); return } catch (e) { setErr(e.message); return } }
     if (accNo.trim() !== lab.accNo) { await store.updateOrder(order.id, { status: 'Quarantined', note: 'Accreditation number mismatch, referred to LSMoH for investigation.' }); onRefresh(); return }
     const ref = order.tests.filter(t => results[t] === 'refer')
     await store.updateOrder(order.id, { status: 'Submitted', results, technicianId: tech.trim(), accreditationNumber: accNo.trim(), resultFile: fileName || 'result.pdf', reportedLsmoh: ref.length > 0, biobankConfirm: ref.length > 0, submittedAt: new Date().toISOString() })
@@ -1225,6 +1282,7 @@ function LSMoHReview({ session, guard, audit }) {
   async function refresh() { setLoading(true); const all = await store.listAllOrders(); setOrders(all.filter(o => o.status === 'Submitted')); setLoading(false) }
   useEffect(() => { refresh() }, [])
   async function approve(o) {
+    if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); refresh(); return }
     const anyRefer = o.results && o.tests.some(t => o.results[t] === 'refer')
     if (anyRefer) { await store.updateOrder(o.id, { status: 'Rejected' }); await audit('Result rejected, referral pathway triggered, escrow held', o.safeplateId) }
     else {
@@ -1239,7 +1297,7 @@ function LSMoHReview({ session, guard, audit }) {
     }
     refresh()
   }
-  async function flag(o) { await store.updateOrder(o.id, { status: 'Flagged' }); await audit('Flagged for further review, escrow held', o.safeplateId); refresh() }
+  async function flag(o) { if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'flag' }); refresh(); return } await store.updateOrder(o.id, { status: 'Flagged' }); await audit('Flagged for further review, escrow held', o.safeplateId); refresh() }
   const shown = orders.filter(o => { const q = search.trim().toLowerCase(); return !q || (o.safeplateId || '').toLowerCase().includes(q) || (o.handlerName || '').toLowerCase().includes(q) })
 
   return (
@@ -1269,7 +1327,7 @@ function CertAdmin({ guard, audit }) {
   const [cert, setCert] = useState(undefined)
   const [busy, setBusy] = useState(false)
   async function find() { setBusy(true); setCert(await store.verifyCertificate(id) || null); setBusy(false) }
-  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; await store.revokeCertificate(cid); await audit('Certificate revoked', cid); setCert(await store.verifyCertificate(cid)) }
+  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; if (SUPABASE_READY) { await store.fn('revoke-certificate', { safeplateId: cid }); setCert(await store.verifyCertificate(cid)); return } await store.revokeCertificate(cid); await audit('Certificate revoked', cid); setCert(await store.verifyCertificate(cid)) }
   return (
     <div>
       <p className="muted" style={{ marginTop: 0 }}>Search any record by SAFEPLATE ID, then revoke a certificate if compliance requires it.</p>
@@ -1376,6 +1434,7 @@ function SterlingModule({ session, tab }) {
   ]
 
   async function release(e) {
+    if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }); refresh(); return }
     await store.releaseEscrow(e.safeplateId, session.name)
     await store.appendAudit({ actor: session.name, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: e.safeplateId })
     await store.notify('laboratory', 'Payment released', e.safeplateId + ', ' + naira(e.amount))
@@ -1566,12 +1625,13 @@ function EmployerWater({ session }) {
   function toLab() { if (!f.facility.trim() || !f.officer.trim()) return; setStep('lab') }
   async function pay(lab) {
     setBusy(true)
-    let reference
-    try { const rr = await payWithPaystack({ email: session.email, amountNaira: WATER_FEE, reference: 'SPW-' + Date.now() }); reference = rr.reference } catch (e) { setBusy(false); return }
-    if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: 'water' }) }); if (!v.ok) { setBusy(false); return } }
     const swid = makeWaterId()
+    const escrowPayload = { safeplateId: swid, name: f.facility.trim(), lab: lab.name, amount: WATER_FEE, status: 'HELD', type: 'WATER', ts: new Date().toISOString() }
+    let reference
+    try { const rr = await payWithPaystack({ email: session.email, amountNaira: WATER_FEE, reference: 'SPW-' + swid }); reference = rr.reference } catch (e) { setBusy(false); return }
+    if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: swid, escrow: escrowPayload }) }); if (!v.ok) { setBusy(false); return } }
     await store.createWaterTest({ swid, facility: f.facility.trim(), lga: f.lga.trim(), source: f.source, officer: f.officer.trim(), contact: f.contact.trim(), lab: lab.name, amount: WATER_FEE, status: 'Submitted, pending LASEPA', results: { ph: '7.2', turbidity: '1.8 NTU', ecoli: '0 CFU/100ml' }, ownerEmail: session.email, ts: new Date().toISOString() })
-    await store.createEscrow({ safeplateId: swid, name: f.facility.trim(), lab: lab.name, amount: WATER_FEE, status: 'HELD', type: 'WATER', ts: new Date().toISOString() })
+    if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
     await store.notify('LASEPA', 'Water result submitted', f.facility.trim() + ' pending LASEPA review')
     await store.dispatch(f.contact, 'sms', 'SafePlate: your ' + naira(WATER_FEE) + ' water test payment is confirmed for ' + f.facility.trim())
     set('swid', swid); setBusy(false); setStep('done'); load()
@@ -1653,6 +1713,7 @@ function WaterReview({ session, guard, audit }) {
   useEffect(() => { refresh() }, [])
 
   async function approve(w) {
+    if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'approve' }); refresh(); return }
     const now = Date.now(), day = 86400000
     const series = makeWaterCertSeries()
     await store.issueCertificate({ safeplateId: w.swid, name: w.facility, panel: 'Potable water quality', lab: w.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', series })
@@ -1664,7 +1725,7 @@ function WaterReview({ session, guard, audit }) {
     await store.dispatch(w.contact, 'sms', 'SafePlate: ' + w.facility + ' water certificate issued, ref ' + series)
     refresh()
   }
-  async function flag(w) { await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); refresh() }
+  async function flag(w) { if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); refresh(); return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); refresh() }
 
   const pending = tests.filter(w => w.status === 'Submitted, pending LASEPA')
   const done = tests.filter(w => w.status !== 'Submitted, pending LASEPA')
@@ -1893,6 +1954,7 @@ export default function App() {
   function changeLang(L) { I18N.lang = L; try { localStorage.setItem('safeplate:lang', L) } catch { /* ignore */ } setLang(L) }
 
   useEffect(() => { seedDemo() }, [])
+  useIdleTimeout(session, () => { signOut() })
   useEffect(() => {
     function onHash() { const { route, param } = parseHash(); if (route === 'status') { setSpecial('status') } else if (route === 'verify') { setSpecial(null); setVerifyId(param || ''); setMode('app'); setTab('verify') } else { setSpecial(null) } }
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
@@ -1906,7 +1968,7 @@ export default function App() {
 
   function onTab(id) { setMode('app'); if (id === 'verify') setVerifyId(''); setTab(id) }
   function onBrand() { setMode('app'); setTab(tabs[0].id); if (!session) { window.location.hash = '' } }
-  function onAuthed(user) { setSession(user); setMode('app'); setTab(tabsForSession(user)[0].id) }
+  function onAuthed(user) { setSession(user); setMode('app'); setTab(tabsForSession(user)[0].id); try { store.appendAudit({ actor: user.email || user.name, role: user.agency || user.role, action: 'Signed in', subject: user.role }) } catch { /* ignore */ } }
   async function signOut() { await store.signOut(); setSession(null); setMode('app'); setTab('overview'); setWorkspace('lsmoh') }
 
   function page() {

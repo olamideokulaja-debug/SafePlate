@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "SafePlate",
+    "slug": "safeplate",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "safeplate",
+    "splash": { "backgroundColor": "#006600" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "ng.gov.lagosstate.safeplate" },
+    "android": { "package": "ng.gov.lagosstate.safeplate" },
+    "extra": {}
+  }
+}
