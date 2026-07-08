@@ -465,6 +465,8 @@ function labsView() {
 }
 
 const FEE = 15000
+// Chart palette (defined early: referenced by AUDIT_CATS and the chart components).
+const CHART = ['#006600', '#FBAE40', '#003366', '#0891b2', '#b3261e', '#7c3aed', '#0f766e']
 const WATERFALL = [
   { who: 'Private Lab, execution', pct: 76.5, amount: 11475 },
   { who: 'LSMoH, oversight & regulation', pct: 10, amount: 1500 },
@@ -2168,7 +2170,6 @@ const ECONOMICS = {
   cumulative: 14898187500
 }
 
-const CHART = ['#006600', '#FBAE40', '#003366', '#0891b2', '#b3261e', '#7c3aed', '#0f766e']
 
 function Donut({ data, size = 128, thick = 20, center, sub }) {
   const total = data.reduce((a, d) => a + d.value, 0) || 1
