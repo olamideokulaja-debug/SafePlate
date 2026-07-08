@@ -719,6 +719,41 @@ function Styles() {
       .wsitem.on{background:var(--green-pale);color:var(--green)}
       .wsitem .wsdot{width:8px;height:8px;border-radius:50%;background:var(--navy);flex:0 0 auto}
       .wsitem.on .wsdot{background:var(--green)}
+      .chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:18px}
+      .chartcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+      .charttitle{font-weight:700;color:var(--ink);font-size:14.5px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+      .charthint{font-weight:500;color:var(--muted);font-size:12px}
+      .chartrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+      .donut{flex:0 0 auto}
+      .donutc{font-family:Lora,serif;font-size:17px;font-weight:700;fill:var(--ink)}
+      .donuts{font-size:9px;fill:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+      .legend{display:flex;flex-direction:column;gap:7px;flex:1;min-width:130px}
+      .legrow{display:flex;align-items:center;gap:8px;font-size:13px}
+      .legrow i{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+      .legrow span{flex:1;color:var(--muted)}
+      .legrow b{font-variant-numeric:tabular-nums;color:var(--ink)}
+      .bars{display:flex;flex-direction:column;gap:11px}
+      .barrow{display:grid;grid-template-columns:120px 1fr auto;align-items:center;gap:10px}
+      .barlabel{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .bartrack{height:10px;background:var(--green-pale);border-radius:6px;overflow:hidden}
+      .barfill{display:block;height:100%;border-radius:6px;transition:width .5s ease}
+      .barval{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+      .linechart{width:100%;height:auto}
+      .axl{font-size:10px;fill:var(--muted)}
+      .journey{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+      .jtitle{font-weight:700;color:var(--ink);font-size:14.5px;margin-bottom:16px}
+      .jtrack{display:flex;align-items:flex-start;overflow-x:auto;padding-bottom:4px}
+      .jstep{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:74px;position:relative;text-align:center}
+      .jstep:not(:last-child):after{content:'';position:absolute;top:17px;left:50%;width:100%;height:2px;background:var(--line);z-index:0}
+      .jstep.done:not(:last-child):after{background:var(--green)}
+      .jicon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;border:2px solid var(--line);color:var(--muted);z-index:1}
+      .jicon svg{width:17px;height:17px}
+      .jstep.done .jicon{background:var(--green);border-color:var(--green);color:#fff}
+      .jstep.now .jicon{border-color:var(--green);color:var(--green);box-shadow:0 0 0 4px var(--green-pale)}
+      .jlabel{font-size:11.5px;color:var(--muted);font-weight:600;line-height:1.25}
+      .jstep.now .jlabel{color:var(--green)}
+      .jstep.done .jlabel{color:var(--ink)}
+      .jnote{font-size:12.5px;margin-top:14px;line-height:1.5}
       .applayout{display:flex;align-items:flex-start}
       .sidebar{width:240px;flex:0 0 240px;background:#fff;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column}
       .sidebrand{display:flex;align-items:center;gap:11px;border:0;background:none;padding:8px 8px 16px;margin-bottom:8px;border-bottom:1px solid var(--line);cursor:pointer}
@@ -728,7 +763,8 @@ function Styles() {
       .sidelink:hover{background:var(--green-pale);color:var(--ink)}
       .sidelink.on{background:var(--green-pale);color:var(--green)}
       .sidelink.on svg{opacity:1}
-      .appmain{flex:1;min-width:0}
+      .appmain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:calc(100vh - 36px)}
+      .appmain > .page{flex:1 0 auto}
       .apptop{display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#fff;border-bottom:1px solid var(--line);padding:0 22px;min-height:56px;position:sticky;top:0;z-index:30}
       .hamburger{display:none;margin-right:auto;border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;align-items:center;justify-content:center;color:var(--ink);cursor:pointer}
       .sidebackdrop{display:none}
@@ -1281,6 +1317,7 @@ function FoodHandlerModule({ session }) {
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{t('fh_title')}</h2><span className="muted" style={{ fontSize: 13 }}>{session.title}</span></div>
+      <FoodJourney step={step} />
       <div className="steps">{STEP_LABELS.map((l, i) => <div key={l} className={'s ' + (i === step ? 'on' : '') + (i < step ? ' done' : '')} title={l} />)}</div>
       {err && <div className="err">{err}</div>}
 
@@ -1380,6 +1417,7 @@ function LaboratoryModule({ session }) {
         </span>
       </div>
       <div className="note" style={{ marginBottom: 18 }}>You see only this laboratory's orders. Results are encrypted at rest (AES-256) in the connected build, and payment is released only after Ministry approval, not on upload.</div>
+      <Insights session={session} />
       {loading && <p className="muted">Loading queue...</p>}
       {!loading && orders.length === 0 && <div className="placeholder">No orders in this laboratory's queue yet. New paid orders appear here automatically.</div>}
       {!loading && orders.map(o => <OrderCard key={o.id} order={o} lab={lab} onAdvance={advance} onRefresh={refresh} />)}
@@ -1465,6 +1503,7 @@ function RegulatorModule({ session, tab }) {
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
+      {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
       {tab === 'review' && <LSMoHReview session={session} guard={guard} audit={audit} />}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <Enforcement guard={guard} audit={audit} />}
@@ -1653,6 +1692,7 @@ function SterlingModule({ session, tab }) {
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Sterling Bank escrow</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{tiles.map(t => <div className="tile" key={t.k}><div className="v">{t.v}</div><div className="k">{t.k}</div></div>)}</div>
       <div className="note" style={{ marginBottom: 18 }}>Sterling Bank never sees test results or medical data. Releases happen only after Ministry approval, and disburse the full waterfall atomically, all legs or none.</div>
+      <Insights session={session} />
 
       {tab === 'ledger' && (
         <div style={{ overflowX: 'auto' }}><table className="audit-tbl">
@@ -1786,6 +1826,7 @@ function EmployerTeam({ session }) {
         <div className="tile"><div className="v">{(counts['Overdue'] || 0) + (counts['Not registered'] || 0)}</div><div className="k">Action needed</div></div>
       </div>
       <div className="note" style={{ marginBottom: 18 }}>You see each member's compliance status only, never their medical results. A compliance digest is emailed weekly.</div>
+      <Insights session={session} />
 
       {msg && <div className="note" style={{ background: 'var(--green-pale)', borderColor: '#bcdcbc', marginBottom: 16 }}>{msg}</div>}
 
@@ -2003,9 +2044,148 @@ const ECONOMICS = {
   cumulative: 14898187500
 }
 
+const CHART = ['#006600', '#FBAE40', '#003366', '#0891b2', '#b3261e', '#7c3aed', '#0f766e']
+
+function Donut({ data, size = 128, thick = 20, center, sub }) {
+  const total = data.reduce((a, d) => a + d.value, 0) || 1
+  const r = (size - thick) / 2, circ = 2 * Math.PI * r
+  let off = 0
+  return (
+    <div className="chartrow">
+      <svg width={size} height={size} viewBox={'0 0 ' + size + ' ' + size} className="donut">
+        <g transform={'rotate(-90 ' + size / 2 + ' ' + size / 2 + ')'}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={thick} />
+          {data.map((d, i) => { const len = (d.value / total) * circ; const seg = <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={d.color} strokeWidth={thick} strokeDasharray={len + ' ' + (circ - len)} strokeDashoffset={-off} />; off += len; return seg })}
+        </g>
+        {center != null && <text x="50%" y="47%" textAnchor="middle" dominantBaseline="central" className="donutc">{center}</text>}
+        {sub && <text x="50%" y="63%" textAnchor="middle" className="donuts">{sub}</text>}
+      </svg>
+      <div className="legend">{data.map((d, i) => <div key={i} className="legrow"><i style={{ background: d.color }} /><span>{d.label}</span><b>{d.display != null ? d.display : d.value}</b></div>)}</div>
+    </div>
+  )
+}
+
+function Bars({ data, unit }) {
+  const max = Math.max(1, ...data.map(d => d.value))
+  return (
+    <div className="bars">
+      {data.map((d, i) => (
+        <div key={i} className="barrow">
+          <span className="barlabel">{d.label}</span>
+          <span className="bartrack"><span className="barfill" style={{ width: (d.value / max * 100) + '%', background: d.color || 'var(--green)' }} /></span>
+          <b className="barval">{unit === 'naira' ? naira(d.value) : d.value}</b>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Line({ series, labels }) {
+  const w = 480, h = 170, pad = 34
+  const max = Math.max(1, ...series)
+  const xs = i => pad + i * (w - pad * 2) / (series.length - 1 || 1)
+  const ys = v => h - pad - (v / max) * (h - pad * 2)
+  const pts = series.map((v, i) => [xs(i), ys(v)])
+  const path = pts.map((pt, i) => (i ? 'L' : 'M') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1)).join(' ')
+  const areaPath = path + ' L ' + pts[pts.length - 1][0].toFixed(1) + ' ' + (h - pad) + ' L ' + pts[0][0].toFixed(1) + ' ' + (h - pad) + ' Z'
+  return (
+    <svg viewBox={'0 0 ' + w + ' ' + h} className="linechart" preserveAspectRatio="xMidYMid meet">
+      <path d={areaPath} fill="var(--green-pale)" />
+      <path d={path} fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinejoin="round" />
+      {pts.map((pt, i) => <circle key={i} cx={pt[0]} cy={pt[1]} r="3.2" fill="#fff" stroke="var(--green)" strokeWidth="2" />)}
+      {labels && labels.map((l, i) => <text key={i} x={xs(i)} y={h - 12} textAnchor="middle" className="axl">{l}</text>)}
+    </svg>
+  )
+}
+
+function ChartCard({ title, hint, children }) {
+  return <div className="chartcard"><div className="charttitle"><span>{title}</span>{hint && <span className="charthint">{hint}</span>}</div>{children}</div>
+}
+
+const statusColor = s => /Approved|Certified|Released/.test(s) ? CHART[0] : /Flag|Reject|Overdue|Quarant/.test(s) ? CHART[4] : /Submitted|Pending|Testing/.test(s) ? CHART[1] : CHART[2]
+
+function Insights({ session }) {
+  const [d, setD] = useState(null)
+  useEffect(() => { let on = true; compute().then(x => { if (on) setD(x) }); return () => { on = false } /* eslint-disable-next-line */ }, [])
+  async function compute() {
+    const role = session.role, agency = session.agency
+    if (role === 'sterling') {
+      const esc = await store.listEscrow(); const sum = a => a.reduce((x, e) => x + (e.amount || 0), 0)
+      const held = esc.filter(e => e.status === 'HELD'), rel = esc.filter(e => e.status === 'RELEASED')
+      return { v: 'sterling', heldAmt: sum(held), relAmt: sum(rel), food: esc.filter(e => e.type !== 'WATER').length, water: esc.filter(e => e.type === 'WATER').length }
+    }
+    if (role === 'laboratory') { const o = await store.listAllOrders(); const by = {}; o.forEach(x => by[x.status || 'Scheduled'] = (by[x.status || 'Scheduled'] || 0) + 1); return { v: 'lab', by } }
+    if (role === 'employer') { const b = await store.getBusiness(session.email); const staff = (b && b.staff) || []; const by = {}; staff.forEach(x => by[x.status] = (by[x.status] || 0) + 1); return { v: 'employer', by, total: staff.length } }
+    if (role === 'regulator' && agency === 'LASEPA') { const w = await store.listAllWaterTests(); const by = {}; w.forEach(x => by[x.status || 'Pending'] = (by[x.status || 'Pending'] || 0) + 1); return { v: 'lasepa', by, total: w.length } }
+    if (role === 'regulator' && agency === 'HEFAMAA') { const labs = labsView(); const acc = labs.filter(l => l.accredited).length; return { v: 'hefamaa', acc, non: labs.length - acc, total: labs.length } }
+    if (role === 'food_handler') return { v: 'none' }
+    return { v: 'none' }
+  }
+  if (!d || d.v === 'none') return null
+
+  if (d.v === 'sterling') return (
+    <div className="chartgrid">
+      <ChartCard title="Escrow position" hint="by value"><Donut center={naira(d.heldAmt + d.relAmt)} sub="in system" data={[{ label: 'Held in escrow', value: d.heldAmt || 0.0001, display: naira(d.heldAmt), color: CHART[1] }, { label: 'Released', value: d.relAmt || 0.0001, display: naira(d.relAmt), color: CHART[0] }]} /></ChartCard>
+      <ChartCard title="Where a ₦15,000 fee goes" hint="five-way waterfall"><Bars unit="naira" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, color: CHART[i % CHART.length] }))} /></ChartCard>
+      <ChartCard title="Transactions by type"><Bars data={[{ label: 'Food handler', value: d.food, color: CHART[0] }, { label: 'Water facility', value: d.water, color: CHART[3] }]} /></ChartCard>
+    </div>
+  )
+  if (d.v === 'lab') { const k = Object.keys(d.by); return (
+    <div className="chartgrid"><ChartCard title="Testing pipeline" hint="orders by status, all accredited labs"><Bars data={k.length ? k.map(x => ({ label: x, value: d.by[x], color: statusColor(x) })) : [{ label: 'No orders yet', value: 0 }]} /></ChartCard></div>
+  )}
+  if (d.v === 'employer') { const k = Object.keys(d.by); return (
+    <div className="chartgrid"><ChartCard title="Team compliance" hint={d.total + ' staff'}><Donut center={d.total} sub="team" data={k.length ? k.map(x => ({ label: x, value: d.by[x], color: statusColor(x) })) : [{ label: 'No staff yet', value: 1, color: 'var(--line)' }]} /></ChartCard></div>
+  )}
+  if (d.v === 'lasepa') { const k = Object.keys(d.by); return (
+    <div className="chartgrid"><ChartCard title="Water facilities" hint={d.total + ' tests'}><Donut center={d.total} sub="facilities" data={k.length ? k.map(x => ({ label: x, value: d.by[x], color: statusColor(x) })) : [{ label: 'No water tests yet', value: 1, color: 'var(--line)' }]} /></ChartCard></div>
+  )}
+  if (d.v === 'hefamaa') return (
+    <div className="chartgrid"><ChartCard title="Laboratory accreditation" hint={d.total + ' labs'}><Donut center={d.acc + '/' + d.total} sub="accredited" data={[{ label: 'Accredited', value: d.acc, color: CHART[0] }, { label: 'Not accredited', value: d.non || 0.0001, color: CHART[4] }]} /></ChartCard></div>
+  )
+  return null
+}
+
+function FoodJourney({ step }) {
+  const stages = [
+    { label: 'Register', icon: 'testing' },
+    { label: 'Test panel', icon: 'queue' },
+    { label: 'Choose lab', icon: 'accreditation' },
+    { label: 'Pay', icon: 'fund' },
+    { label: 'Sample & testing', icon: 'review' },
+    { label: 'Ministry review', icon: 'audit' },
+    { label: 'Certified', icon: 'verify' }
+  ]
+  const current = Math.min(step, stages.length - 1)
+  return (
+    <div className="journey">
+      <div className="jtitle">Your certification journey</div>
+      <div className="jtrack">
+        {stages.map((st, i) => {
+          const state = i < current ? 'done' : i === current ? 'now' : 'todo'
+          return (
+            <div key={i} className={'jstep ' + state}>
+              <div className="jicon">{i < current ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : <NavIcon id={st.icon} />}</div>
+              <span className="jlabel">{st.label}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="jnote muted">{current <= 3 ? 'Complete the steps above to submit your sample. After that, the laboratory tests it and the Ministry reviews the result before your certificate is issued.' : 'Payment received. Give your sample at your chosen laboratory, they test it, then the Ministry reviews and issues your Certificate of Fitness.'}</div>
+    </div>
+  )
+}
+
 function Analytics() {
   const [live, setLive] = useState({ n: 0, amt: 0 })
-  useEffect(() => { store.listEscrow().then(esc => { const rel = esc.filter(e => e.status === 'RELEASED'); setLive({ n: rel.length, amt: rel.reduce((a, e) => a + (e.amount || 0), 0) }) }) }, [])
+  const [ins, setIns] = useState(null)
+  useEffect(() => {
+    store.listEscrow().then(esc => { const rel = esc.filter(e => e.status === 'RELEASED'); setLive({ n: rel.length, amt: rel.reduce((a, e) => a + (e.amount || 0), 0) }) })
+    Promise.all([store.listAllOrders(), store.listEscrow(), store.listAllWaterTests()]).then(([orders, esc]) => {
+      const by = {}; orders.forEach(o => by[o.status || 'Scheduled'] = (by[o.status || 'Scheduled'] || 0) + 1)
+      const sum = a => a.reduce((x, e) => x + (e.amount || 0), 0)
+      setIns({ by, heldAmt: sum(esc.filter(e => e.status === 'HELD')), relAmt: sum(esc.filter(e => e.status === 'RELEASED')), food: esc.filter(e => e.type !== 'WATER').length, water: esc.filter(e => e.type === 'WATER').length })
+    })
+  }, [])
   return (
     <div>
       <div className="tiles" style={{ marginBottom: 18 }}>
@@ -2014,6 +2194,15 @@ function Analytics() {
         <div className="tile"><div className="v">{naira(ECONOMICS.cumulative)}</div><div className="k">5-year projected revenue</div></div>
         <div className="tile"><div className="v">6,500</div><div className="k">Eateries at full ramp</div></div>
       </div>
+      {ins && (
+        <div className="chartgrid">
+          <ChartCard title="Programme revenue" hint="5-year projection"><Line series={ECONOMICS.total} labels={['Y1', 'Y2', 'Y3', 'Y4', 'Y5']} /></ChartCard>
+          <ChartCard title="Where a ₦15,000 fee goes" hint="five-way waterfall"><Donut center="₦15k" sub="per test" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, display: naira(w.amount), color: CHART[i % CHART.length] }))} /></ChartCard>
+          <ChartCard title="Testing pipeline" hint="live orders by status"><Bars data={Object.keys(ins.by).length ? Object.keys(ins.by).map((k, i) => ({ label: k, value: ins.by[k], color: statusColor(k) })) : [{ label: 'No orders yet', value: 0 }]} /></ChartCard>
+          <ChartCard title="Escrow held vs released" hint="by value"><Donut center={naira(ins.heldAmt + ins.relAmt)} sub="in system" data={[{ label: 'Held', value: ins.heldAmt || 0.0001, display: naira(ins.heldAmt), color: CHART[1] }, { label: 'Released', value: ins.relAmt || 0.0001, display: naira(ins.relAmt), color: CHART[0] }]} /></ChartCard>
+          <ChartCard title="Volume by type" hint="food vs water"><Bars data={[{ label: 'Food handler', value: ins.food, color: CHART[0] }, { label: 'Water facility', value: ins.water, color: CHART[3] }]} /></ChartCard>
+        </div>
+      )}
       <h3 className="serif" style={{ fontSize: 18 }}>Five-year project economics</h3>
       <div style={{ overflowX: 'auto' }}>
         <table className="audit-tbl">
