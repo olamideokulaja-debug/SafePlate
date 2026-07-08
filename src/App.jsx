@@ -213,6 +213,10 @@ const store = {
     if (SUPABASE_READY) { const { error } = await supabase.from('food_handlers').upsert(toSnake(record), { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return record }
     const db = DEMO.read(); db.handlers = db.handlers || {}; db.handlers[record.safeplateId] = record; DEMO.write(db); return record
   },
+  async getHandlerPhoto(safeplateId) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('food_handlers').select('photo').eq('safeplate_id', safeplateId).limit(1); return data && data[0] ? data[0].photo : null }
+    const db = DEMO.read(); const h = (db.handlers || {})[safeplateId]; return h ? h.photo : null
+  },
   async createOrder(order) {
     if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').insert(toSnake(order)); if (error) throw new Error(error.message); return order }
     const db = DEMO.read(); db.orders = db.orders || {}; db.orders[order.id] = order; DEMO.write(db); return order
@@ -427,6 +431,7 @@ async function generateCertPDF(cert) {
   doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.rect(28, 28, W - 56, H - 56)
   doc.setDrawColor(251, 174, 64); doc.setLineWidth(0.7); doc.rect(36, 36, W - 72, H - 72)
   try { const crest = await fetchDataUrl('/lagos-logo.png'); doc.addImage(crest, 'PNG', W / 2 - 42, 52, 84, 84) } catch (e) { /* ignore */ }
+  if (cert.photo) { try { doc.addImage(cert.photo, 'JPEG', W - 166, 58, 96, 112); doc.setDrawColor(0, 102, 0); doc.setLineWidth(1); doc.rect(W - 166, 58, 96, 112); doc.setFont('times', 'normal'); doc.setFontSize(8); doc.setTextColor(90, 107, 100); doc.text('HOLDER', W - 118, 184, { align: 'center' }) } catch (e) { /* ignore */ } }
   doc.setFont('times', 'bold'); doc.setTextColor(0, 51, 102); doc.setFontSize(16)
   doc.text('Lagos State Ministry of Health', W / 2, 162, { align: 'center' })
   doc.setFontSize(22); doc.setTextColor(0, 102, 0)
@@ -1199,6 +1204,7 @@ function VerifyWidget({ initialId }) {
       )}
       {result && (
         <div className={'result ' + result.status}><span className={'badge ' + result.status}>{result.status}</span>
+          {result.photo && <div style={{ marginTop: 12 }}><img src={result.photo} alt="Certificate holder" style={{ width: 100, height: 116, objectFit: 'cover', borderRadius: 10, border: '2px solid ' + (result.status === 'VALID' ? 'var(--green)' : 'var(--line)') }} /></div>}
           <p style={{ margin: '12px 0 4px', fontFamily: 'Lora, serif', fontSize: 18 }}>{result.name}</p>
           <div className="muted" style={{ fontSize: 13.5 }}>
             <div>{result.safeplateId || result.safeplate_id}</div>
@@ -1347,6 +1353,7 @@ function FoodHandlerModule({ session }) {
     setErr('')
     if (!form.name.trim() || !form.phone.trim()) { setErr('Name and phone number are required to register.'); return }
     if (!form.dob || !form.gender || !form.lga) { setErr('Date of birth, gender and LGA are required.'); return }
+    if (!form.photo) { setErr('A passport photo is required. It is printed on your certificate to prevent anyone else using it.'); return }
     if (!/^0?\d{10,11}$/.test(form.phone.replace(/\s+/g, ''))) { setErr('Enter a valid Nigerian phone number.'); return }
     setBusy(true)
     try {
@@ -1399,7 +1406,7 @@ function FoodHandlerModule({ session }) {
           <div className="field"><label>{t('lbl_email')}</label><input value={form.email} onChange={e => setF('email', e.target.value)} placeholder="you@example.com" /></div>
           <div className="field"><label>{t('lbl_employer')}</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
           <div className="field"><label>Employer address (optional)</label><input value={form.employerAddress} onChange={e => setF('employerAddress', e.target.value)} placeholder="Where you work" /></div>
-          <div className="field"><label>Passport photo (optional)</label><input type="file" accept="image/*" onChange={async e => { const f = e.target.files && e.target.files[0]; if (f) { try { setF('photo', await compressImage(f)) } catch { /* ignore */ } } }} />{form.photo && <img src={form.photo} alt="preview" style={{ marginTop: 8, width: 72, height: 72, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />}</div>
+          <div className="field"><label>Passport photo <span style={{ color: 'var(--green)' }}>(required)</span></label><input type="file" accept="image/*" onChange={async e => { const f = e.target.files && e.target.files[0]; if (f) { try { setF('photo', await compressImage(f)) } catch { /* ignore */ } } }} /><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Your photo is printed on your certificate so it cannot be used by anyone else.</div>{form.photo && <img src={form.photo} alt="preview" style={{ marginTop: 8, width: 84, height: 96, objectFit: 'cover', borderRadius: 10, border: '2px solid var(--green)' }} />}</div>
           <button className="btn p block" onClick={register} disabled={busy}>{busy ? 'Checking...' : t('btn_create_id')}</button>
         </div>
       )}
@@ -1589,7 +1596,8 @@ function LSMoHReview({ session, guard, audit }) {
     if (anyRefer) { await store.updateOrder(o.id, { status: 'Rejected' }); await audit('Result rejected, referral pathway triggered, escrow held', o.safeplateId) }
     else {
       const now = Date.now(), day = 86400000
-      await store.issueCertificate({ safeplateId: o.safeplateId, name: o.handlerName, panel: o.tests.join(', '), lab: o.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID' })
+      const holderPhoto = await store.getHandlerPhoto(o.safeplateId)
+      await store.issueCertificate({ safeplateId: o.safeplateId, name: o.handlerName, panel: o.tests.join(', '), lab: o.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', photo: holderPhoto })
       await store.createRelease({ safeplateId: o.safeplateId, name: o.handlerName, lab: o.lab, amount: FEE, status: 'Instructed', approvedBy: session.name, ts: new Date().toISOString() })
       await store.updateOrder(o.id, { status: 'Approved' })
       await audit('Approved, certificate issued, escrow release instructed to Sterling Bank', o.safeplateId)

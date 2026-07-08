@@ -3,6 +3,7 @@
 -- The SQL editor bypasses RLS, so these inserts always apply.
 
 alter table certificates add column if not exists cert_no text;
+alter table certificates add column if not exists photo text;
 alter table food_handlers add column if not exists lga text;
 alter table businesses add column if not exists owner_uid uuid;
 

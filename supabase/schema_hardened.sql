@@ -176,3 +176,7 @@ alter table food_handlers add column if not exists address text;
 alter table food_handlers add column if not exists lga text;
 alter table food_handlers add column if not exists employer_address text;
 alter table food_handlers add column if not exists photo text;
+
+-- Holder photo on the certificate (printed on the PDF and shown on public
+-- verification so a certificate cannot be used by anyone else).
+alter table certificates add column if not exists photo text;

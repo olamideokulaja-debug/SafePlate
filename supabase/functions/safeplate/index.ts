@@ -98,17 +98,17 @@ Deno.serve(async (req) => {
       }
       const { data: lsh } = await db.rpc('next_lsh')
       const now = Date.now(), day = 86400000
-      await db.from('certificates').upsert({ safeplate_id: order.safeplate_id, name: order.handler_name, panel: (order.tests || []).join(', '), lab: order.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', cert_no: lsh }, { onConflict: 'safeplate_id' })
+      const { data: fhRow } = await db.from('food_handlers').select('email, photo').eq('safeplate_id', order.safeplate_id).single()
+      await db.from('certificates').upsert({ safeplate_id: order.safeplate_id, name: order.handler_name, panel: (order.tests || []).join(', '), lab: order.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', cert_no: lsh, photo: fhRow?.photo || null }, { onConflict: 'safeplate_id' })
       await db.from('escrow_releases').insert({ safeplate_id: order.safeplate_id, name: order.handler_name, lab: order.lab, amount: FEE, status: 'Instructed', approved_by: me.email, ts: new Date().toISOString() })
       await db.from('test_orders').update({ status: 'Approved' }).eq('id', body.orderId)
       await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Approved, certificate ' + lsh + ' issued, escrow release instructed', subject: order.safeplate_id })
       await db.from('notifications').insert([{ audience: 'sterling', title: 'Escrow release instructed', body: order.safeplate_id }, { audience: 'all', title: 'Certificate issued', body: order.handler_name + ' is now certified' }])
       // Email the certificate link to the handler (optional; needs RESEND_API_KEY).
       try {
-        const { data: fh } = await db.from('food_handlers').select('email').eq('safeplate_id', order.safeplate_id).single()
         const resendKey = Deno.env.get('RESEND_API_KEY')
         const appUrl = Deno.env.get('APP_URL') || ''
-        if (fh?.email && resendKey) {
+        if (fhRow?.email && resendKey) {
           await fetch('https://api.resend.com/emails', {
             method: 'POST', headers: { authorization: 'Bearer ' + resendKey, 'content-type': 'application/json' },
             body: JSON.stringify({ from: 'SafePlate <onboarding@resend.dev>', to: fh.email, subject: 'Your SafePlate Certificate of Fitness (' + lsh + ')', html: 'Your Certificate of Fitness is issued. View, download or verify it here: <a href="' + appUrl + '/#/verify/' + order.safeplate_id + '">' + appUrl + '/#/verify/' + order.safeplate_id + '</a>' })
