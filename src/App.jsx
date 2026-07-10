@@ -31,10 +31,46 @@ const supabase = SUPABASE_READY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
 /* Paystack (live when VITE_PAYSTACK_PUBLIC_KEY is set, simulated otherwise) */
 const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY
 const PAYSTACK_READY = Boolean(PAYSTACK_PUBLIC_KEY)
+function accentFor(x) {
+  if (!x) return '#006600'
+  if (x.role === 'regulator') return x.agency === 'LASEPA' ? '#0891b2' : x.agency === 'HEFAMAA' ? '#7c3aed' : '#15803d'
+  return ({ food_handler: '#006600', laboratory: '#b45309', sterling: '#1d4ed8', employer: '#be185d' })[x.role] || '#006600'
+}
+
+let _toastFns = []
+function toast(msg, kind) { _toastFns.forEach(f => f(msg, kind)) }
+function Toasts() {
+  const [items, setItems] = useState([])
+  useEffect(() => {
+    const add = (msg, kind) => { const id = Math.random(); setItems(x => [...x, { id, msg, kind }]); setTimeout(() => setItems(x => x.filter(i => i.id !== id)), 4200) }
+    _toastFns.push(add); return () => { _toastFns = _toastFns.filter(f => f !== add) }
+  }, [])
+  if (!items.length) return null
+  return <div className="toasts">{items.map(i => <div key={i.id} className={'toast ' + (i.kind || '')}>{i.msg}</div>)}</div>
+}
+function Seal({ size = 104 }) {
+  return (
+    <svg className="seal" width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="56" fill="#fff" stroke="var(--green)" strokeWidth="2.5" />
+      <circle cx="60" cy="60" r="49" fill="none" stroke="var(--gold)" strokeWidth="2" strokeDasharray="3 5" />
+      <circle cx="60" cy="60" r="37" fill="var(--green)" />
+      <path d="M45 60 l10 10 l21 -23" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="60" y="105" textAnchor="middle" fontSize="8" fontWeight="700" fill="var(--green)" letterSpacing="1.5">LAGOS STATE</text>
+    </svg>
+  )
+}
+function CrossSeal({ size = 104 }) {
+  return (
+    <svg className="seal" width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="54" fill="#fff" stroke="#b3261e" strokeWidth="3" />
+      <path d="M44 44 l32 32 M76 44 l-32 32" stroke="#b3261e" strokeWidth="6.5" strokeLinecap="round" />
+    </svg>
+  )
+}
 function loadPaystack() {
   return new Promise((resolve, reject) => {
     if (window.PaystackPop) return resolve()
-    const sc = document.createElement('script'); sc.src = 'https://js.paystack.co/v1/inline.js'
+    const sc = document.createElement('script'); sc.src = 'https://js.paystack.co/v2/inline.js'
     sc.onload = () => resolve(); sc.onerror = () => reject(new Error('Could not load Paystack')); document.body.appendChild(sc)
   })
 }
@@ -42,8 +78,19 @@ async function payWithPaystack({ email, amountNaira, reference }) {
   if (!PAYSTACK_READY) { await new Promise(r => setTimeout(r, 700)); return { reference: reference || ('DEMO-' + Date.now()), simulated: true } }
   await loadPaystack()
   return new Promise((resolve, reject) => {
-    const handler = window.PaystackPop.setup({ key: PAYSTACK_PUBLIC_KEY, email: email || 'noreply@safeplate.lagosstate.gov.ng', amount: Math.round(amountNaira * 100), currency: 'NGN', ref: reference || ('SP-' + Date.now()), callback: resp => resolve({ reference: resp.reference }), onClose: () => reject(new Error('Payment window closed')) })
-    handler.openIframe()
+    try {
+      const popup = new window.PaystackPop()
+      popup.newTransaction({
+        key: PAYSTACK_PUBLIC_KEY,
+        email: email || 'noreply@safeplate.lagosstate.gov.ng',
+        amount: Math.round(amountNaira * 100),
+        currency: 'NGN',
+        reference: reference || ('SP-' + Date.now()),
+        onSuccess: tx => resolve({ reference: tx.reference }),
+        onCancel: () => reject(new Error('Payment window closed')),
+        onError: e => reject(new Error('Payment could not start: ' + ((e && e.message) || 'check the Paystack key and that this domain is added in your Paystack dashboard')))
+      })
+    } catch (e) { reject(new Error('Payment could not start. Confirm the Paystack public key is set and this domain is allowed in Paystack.')) }
   })
 }
 
@@ -216,6 +263,27 @@ const store = {
   async getHandlerPhoto(safeplateId) {
     if (SUPABASE_READY) { const { data } = await supabase.from('food_handlers').select('photo').eq('safeplate_id', safeplateId).limit(1); return data && data[0] ? data[0].photo : null }
     const db = DEMO.read(); const h = (db.handlers || {})[safeplateId]; return h ? h.photo : null
+  },
+  async getMyHandler(session) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('food_handlers').select('*').order('created_at', { ascending: false }).limit(1); return data && data[0] ? toCamel(data[0]) : null }
+    const db = DEMO.read(); const list = Object.values(db.handlers || {}).filter(h => h.email && session.email && h.email.toLowerCase() === session.email.toLowerCase()); return list.length ? list[list.length - 1] : null
+  },
+  async getOrderFor(safeplateId) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('test_orders').select('*').eq('safeplate_id', safeplateId).order('created_at', { ascending: false }).limit(1); return data && data[0] ? toCamel(data[0]) : null }
+    const db = DEMO.read(); const list = Object.values(db.orders || {}).filter(o => o.safeplateId === safeplateId); return list.length ? list[list.length - 1] : null
+  },
+  async createAppeal(a) {
+    const rec = { ...a, status: 'Open', createdAt: new Date().toISOString() }
+    if (SUPABASE_READY) { const { error } = await supabase.from('appeals').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
+    const db = DEMO.read(); db.appeals = db.appeals || []; db.appeals.push({ id: Date.now(), ...rec }); DEMO.write(db); return rec
+  },
+  async listAppeals(agency) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('appeals').select('*').order('created_at', { ascending: false }); const rows = camelList(data); return agency ? rows.filter(r => r.agency === agency) : rows }
+    const db = DEMO.read(); const rows = (db.appeals || []).slice().reverse(); return agency ? rows.filter(r => r.agency === agency) : rows
+  },
+  async resolveAppeal(id, resolution, status) {
+    if (SUPABASE_READY) { await supabase.from('appeals').update({ status: status || 'Resolved', resolution }).eq('id', id); return }
+    const db = DEMO.read(); db.appeals = (db.appeals || []).map(a => a.id === id ? { ...a, status: status || 'Resolved', resolution } : a); DEMO.write(db)
   },
   async createOrder(order) {
     if (SUPABASE_READY) { const { error } = await supabase.from('test_orders').insert(toSnake(order)); if (error) throw new Error(error.message); return order }
@@ -426,11 +494,20 @@ async function fetchDataUrl(url) {
 // Build and download a Certificate of Fitness PDF.
 async function generateCertPDF(cert) {
   const id = cert.safeplateId || cert.safeplate_id
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight()
   doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.rect(28, 28, W - 56, H - 56)
   doc.setDrawColor(251, 174, 64); doc.setLineWidth(0.7); doc.rect(36, 36, W - 72, H - 72)
   try { const crest = await fetchDataUrl('/lagos-logo.png'); doc.addImage(crest, 'PNG', W / 2 - 42, 52, 84, 84) } catch (e) { /* ignore */ }
+  try {
+    const sx = 96, sy = H - 132
+    doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.circle(sx, sy, 34)
+    doc.setDrawColor(251, 174, 64); doc.setLineWidth(1.4); doc.circle(sx, sy, 29)
+    doc.setFillColor(0, 102, 0); doc.circle(sx, sy, 21, 'F')
+    doc.setDrawColor(255, 255, 255); doc.setLineWidth(3.4)
+    doc.line(sx - 9, sy + 1, sx - 3, sy + 8); doc.line(sx - 3, sy + 8, sx + 10, sy - 8)
+    doc.setFont('times', 'bold'); doc.setFontSize(6); doc.setTextColor(0, 102, 0); doc.text('LAGOS STATE  •  VERIFIED', sx, sy + 44, { align: 'center' })
+  } catch (e) { /* ignore */ }
   if (cert.photo) { try { doc.addImage(cert.photo, 'JPEG', W - 166, 58, 96, 112); doc.setDrawColor(0, 102, 0); doc.setLineWidth(1); doc.rect(W - 166, 58, 96, 112); doc.setFont('times', 'normal'); doc.setFontSize(8); doc.setTextColor(90, 107, 100); doc.text('HOLDER', W - 118, 184, { align: 'center' }) } catch (e) { /* ignore */ } }
   doc.setFont('times', 'bold'); doc.setTextColor(0, 51, 102); doc.setFontSize(16)
   doc.text('Lagos State Ministry of Health', W / 2, 162, { align: 'center' })
@@ -577,7 +654,7 @@ function tabsForSession(session) {
 function Styles() {
   return (
     <style>{`
-      :root{--green:${PALETTE.green};--gold:${PALETTE.gold};--navy:${PALETTE.navy};--ink:#12241f;--muted:#5b6b64;--line:#e3e7e4;--paper:#fbfcfb;--green-pale:#eef4ee;--gold-pale:#fdf3e0;--navy-pale:#eaf0f6}
+      :root{--green:${PALETTE.green};--gold:${PALETTE.gold};--navy:${PALETTE.navy};--ink:#0e1f18;--muted:#5b6b64;--line:#e3e7e4;--paper:#f7faf8;--green-pale:#e9f3ec;--gold-pale:#fdf3e0;--navy-pale:#eaf0f6;--green-deep:#044d2b;--green-glow:#12a150;--gold-deep:#e8912a;--mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;--r-sm:8px;--r:11px;--r-lg:16px;--r-xl:22px;--sh-sm:0 1px 2px rgba(16,38,28,.05),0 1px 3px rgba(16,38,28,.04);--sh-md:0 4px 12px rgba(16,38,28,.07),0 2px 4px rgba(16,38,28,.05);--sh-lg:0 18px 40px rgba(16,38,28,.12),0 6px 14px rgba(16,38,28,.08);--sh-glow:0 8px 30px rgba(0,102,0,.18);--ease:cubic-bezier(.22,.61,.36,1);--accent:${PALETTE.green}}
       *{box-sizing:border-box}
       html,body,#root{margin:0;padding:0}
       body{background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -804,6 +881,8 @@ function Styles() {
       .audsearch{margin-bottom:16px}
       .audsearch input{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;background:#fff}
       .audsearch input:focus{outline:none;border-color:var(--green)}
+      .field textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;background:#fff;resize:vertical}
+      .field textarea:focus{outline:none;border-color:var(--green)}
       .viewtog{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
       .viewtog button{border:0;background:#fff;padding:7px 15px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
       .viewtog button.on{background:var(--green-pale);color:var(--green)}
@@ -828,11 +907,11 @@ function Styles() {
       .sidelink{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;background:none;border-radius:10px;font-weight:600;font-size:14.5px;color:var(--muted);text-align:left;cursor:pointer;transition:background .15s,color .15s}
       .sidelink svg{width:18px;height:18px;flex:0 0 18px;opacity:.75}
       .sidelink:hover{background:var(--green-pale);color:var(--ink)}
-      .sidelink.on{background:var(--green-pale);color:var(--green)}
-      .sidelink.on svg{opacity:1}
+      .sidelink.on{background:var(--green-pale);color:var(--accent, var(--green));box-shadow:inset 3px 0 0 var(--accent, var(--green))}
+      .sidelink.on svg{opacity:1;color:var(--accent, var(--green))}
       .appmain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:calc(100vh - 36px)}
       .appmain > .page{flex:1 0 auto}
-      .apptop{display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#fff;border-bottom:1px solid var(--line);padding:0 22px;min-height:56px;position:sticky;top:0;z-index:30}
+      .apptop{display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#fff;border-bottom:1px solid var(--line);border-top:3px solid var(--accent, var(--green));padding:0 22px;min-height:56px;position:sticky;top:0;z-index:30}
       .hamburger{display:none;margin-right:auto;border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;align-items:center;justify-content:center;color:var(--ink);cursor:pointer}
       .sidebackdrop{display:none}
       @media (max-width:860px){
@@ -884,6 +963,98 @@ function Styles() {
       .foot-lnk{background:none;border:0;color:#cfe0cf;text-decoration:underline;cursor:pointer;padding:0;font:inherit}
       @media(max-width:900px){.wordmark small{display:none}}
       @media(prefers-reduced-motion:reduce){.pulse{animation:none}.role-card:hover{transform:none}.page{animation:none}.pillar:hover,.tile:hover,.lab-row:hover,.btn.p:hover,.btn.g:hover,.chip:hover{transform:none}.consent{animation:none}.avmenu{animation:none}}
+      /* ===== Bold refresh ===== */
+      body{background:radial-gradient(130% 90% at 50% -20%, #eaf5ee 0%, var(--paper) 46%) fixed}
+      ::selection{background:var(--green);color:#fff}
+      a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--green-glow);outline-offset:2px}
+      .serif{letter-spacing:-.012em}
+      .hero h1{font-size:clamp(34px,5.2vw,60px);line-height:1.02;font-weight:700;letter-spacing:-.026em}
+      .sec{letter-spacing:-.02em}
+      .mono{font-family:var(--mono);letter-spacing:-.02em}
+      .btn{border-radius:var(--r);transition:transform .18s var(--ease),box-shadow .18s var(--ease),background .18s,border-color .18s}
+      .btn:hover{transform:translateY(-1.5px)}
+      .btn:active{transform:translateY(0) scale(.985)}
+      .btn.p{background:linear-gradient(180deg,#0a7a41,var(--green));border-color:var(--green-deep);color:#fff;box-shadow:var(--sh-sm)}
+      .btn.p:hover{box-shadow:var(--sh-glow)}
+      .btn.g{background:linear-gradient(180deg,#fdbb56,var(--gold));border-color:var(--gold-deep);color:#3a2600}
+      .btn.g:hover{box-shadow:0 8px 24px rgba(251,174,64,.35)}
+      .btn.sm{border-radius:var(--r-sm)}
+      .card{border-radius:var(--r-lg);box-shadow:var(--sh-sm);transition:box-shadow .25s var(--ease),transform .25s var(--ease)}
+      .pillar,.role-card{border-radius:var(--r-lg);transition:transform .25s var(--ease),box-shadow .25s var(--ease),border-color .2s}
+      .pillar:hover,.role-card:hover{transform:translateY(-4px);box-shadow:var(--sh-lg);border-color:#cfe3d5}
+      .tiles{gap:14px}
+      .tile{border-radius:var(--r-lg);border:1px solid var(--line);background:#fff;position:relative;overflow:hidden;box-shadow:var(--sh-sm);transition:transform .22s var(--ease),box-shadow .22s var(--ease);animation:fadeUp .5s var(--ease) both}
+      .tile:before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,var(--green))}
+      .tile:hover{transform:translateY(-3px);box-shadow:var(--sh-md)}
+      .tile:nth-child(2){animation-delay:.05s}.tile:nth-child(3){animation-delay:.1s}.tile:nth-child(4){animation-delay:.15s}
+      .tile .v{font-family:'Lora',serif;font-size:27px;letter-spacing:-.02em;color:var(--ink)}
+      .tile .k{color:var(--muted);font-size:12.5px}
+      .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 11px 4px 9px;border-radius:100px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border:1px solid transparent}
+      .badge:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+      .badge.VALID{background:#e7f4ec;color:#0a6b39;border-color:#c7e6d3}
+      .badge.EXPIRED{background:#fdf1dd;color:#9a6200;border-color:#f3dcae}
+      .badge.REVOKED{background:#fdeaea;color:#b3261e;border-color:#f3c9c9}
+      .status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700}
+      .status.HELD{background:#fdf1dd;color:#9a6200}
+      .status.RELEASED{background:#e7f4ec;color:#0a6b39}
+      .audit-tbl{border-collapse:separate;border-spacing:0;border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-sm);background:#fff}
+      .audit-tbl thead th{position:sticky;top:0;background:#eef4f0;z-index:1;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line)}
+      .audit-tbl tbody td{padding:11px 14px;border-bottom:1px solid #eef1ee;font-size:13.5px}
+      .audit-tbl tbody tr:nth-child(even){background:#fafcfb}
+      .audit-tbl tbody tr:hover{background:var(--green-pale)}
+      .audit-tbl tbody tr:last-child td{border-bottom:0}
+      .field input,.field select,.field textarea{border-radius:var(--r);transition:border-color .18s,box-shadow .18s}
+      .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(0,102,0,.13)}
+      .sidelink{transition:background .16s,color .16s,transform .16s var(--ease)}
+      .sidelink:hover{transform:translateX(2px)}
+      .chartgrid .chartcard{animation:fadeUp .5s var(--ease) both}
+      @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+      @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes shimmer{0%{background-position:-460px 0}100%{background-position:460px 0}}
+      @keyframes sealStamp{0%{opacity:0;transform:scale(1.5) rotate(-14deg)}60%{opacity:1;transform:scale(.94) rotate(3deg)}100%{transform:scale(1) rotate(0)}}
+      @keyframes toastIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+      @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+      .reveal{opacity:0;transform:translateY(22px)}
+      .reveal.in{animation:fadeUp .7s var(--ease) forwards}
+      .rise{animation:fadeUp .55s var(--ease) both}
+      .skel{background:linear-gradient(90deg,#eef2ef 25%,#f6f9f7 37%,#eef2ef 63%);background-size:920px 100%;animation:shimmer 1.4s infinite linear;border-radius:8px;min-height:14px}
+      .toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;z-index:200;max-width:340px}
+      .toast{background:#0e2a1c;color:#eaf5ee;padding:12px 15px;border-radius:12px;box-shadow:var(--sh-lg);font-size:13.5px;animation:toastIn .35s var(--ease);border-left:4px solid var(--green-glow)}
+      .toast.warn{border-left-color:var(--gold)}.toast.err{border-left-color:#ef5350}.toast b{color:#fff}
+      .seal{animation:sealStamp .75s var(--ease)}
+      .trust{border-radius:var(--r-xl);padding:26px;display:flex;gap:22px;align-items:center;box-shadow:var(--sh-md);border:1px solid var(--line);flex-wrap:wrap}
+      .trust.ok{background:linear-gradient(180deg,#effaf2,#fff);border-color:#c7e6d3}
+      .trust.no{background:linear-gradient(180deg,#fdf0f0,#fff);border-color:#f3c9c9}
+      .trust .who2 b{font-family:'Lora',serif;font-size:24px;letter-spacing:-.02em;display:block}
+      .floaty{animation:floaty 6s ease-in-out infinite}
+      .placeholder{border:1.5px dashed #d3ddd6;border-radius:var(--r-lg);background:#fbfdfc;color:var(--muted);text-align:center;padding:30px 20px;font-size:14px}
+      .skelrow{display:flex;flex-direction:column;gap:10px;padding:8px 0}
+      @media(max-width:640px){
+        .wrap{padding:0 16px}
+        .hdr .wrap{padding:0 16px}
+        .sec{font-size:26px}
+        .card{padding:16px}
+        .tiles{grid-template-columns:repeat(2,1fr);gap:10px}
+        .tile{padding:14px}
+        .tile .v{font-size:22px}
+        .chartgrid{grid-template-columns:1fr}
+        .audit-tbl{min-width:560px}
+        .barrow{grid-template-columns:92px 1fr auto}
+        .row-between{flex-wrap:wrap;gap:10px}
+        .trust{padding:18px;gap:16px}
+        .trust img{width:88px !important;height:104px !important}
+        .apptop{padding:0 14px;gap:8px}
+        .apptop .wsbtn span{display:none}
+        .split-tbl td{font-size:13px}
+      }
+      @media(max-width:420px){
+        .tiles{grid-template-columns:1fr}
+        .hero h1{font-size:31px}
+        .sec{font-size:22px}
+        .apptop .actions{gap:6px}
+        .btn{padding:9px 13px}
+      }
+      @media(prefers-reduced-motion:reduce){.reveal,.reveal.in,.rise,.seal,.toast,.floaty,.skel,.tile,.chartgrid .chartcard{animation:none!important;opacity:1!important;transform:none!important}.btn:hover,.tile:hover,.pillar:hover,.role-card:hover,.sidelink:hover{transform:none}}
     `}</style>
   )
 }
@@ -1150,7 +1321,7 @@ function Overview({ onStart, onVerify }) {
           </div>
           <p className="hero-fine">{t('hero_model')}</p>
         </div>
-        <div className="hero-art"><img src="/lagos-logo.png" alt="Lagos State Government coat of arms" /></div>
+        <div className="hero-art"><img className="floaty" src="/lagos-logo.png" alt="Lagos State Government coat of arms" /></div>
       </div>
     </div></div>
   )
@@ -1162,8 +1333,8 @@ function SystemPage() {
       <div className="kicker">{t('sys_kicker')}</div>
       <h2 className="sec serif">{t('sys_title')}</h2>
       <p className="sub">SafePlate moves Lagos from fragmented, reactive checks to a preventive, data-driven model that pays for itself.</p>
-      <div className="pillars">{PILLARS.map(p => (
-        <div className="pillar" key={p.n}><div className="num">{p.n}</div><h3 className="serif">{p.title}</h3><p>{p.body}</p></div>
+      <div className="pillars">{PILLARS.map((p, i) => (
+        <div className="pillar reveal" key={p.n} style={{ animationDelay: (i * 0.08) + 's' }}><div className="num">{p.n}</div><h3 className="serif">{p.title}</h3><p>{p.body}</p></div>
       ))}</div>
     </div></div>
   )
@@ -1175,8 +1346,8 @@ function ImpactPage() {
       <div className="kicker">{t('imp_kicker')}</div>
       <h2 className="sec serif">{t('imp_title')}</h2>
       <p className="sub">Health, economy and governance all point the same way: prevention beats episodic crackdowns.</p>
-      <div className="burden">{BURDEN.map(b => (
-        <div className="cell" key={b.label}><div className="big">{b.stat}</div><div className="lbl">{b.label}</div><div className="src">Source: {b.src}</div></div>
+      <div className="burden">{BURDEN.map((b, i) => (
+        <div className="cell reveal" key={b.label} style={{ animationDelay: (i * 0.08) + 's' }}><div className="big">{b.stat}</div><div className="lbl">{b.label}</div><div className="src">Source: {b.src}</div></div>
       ))}</div>
     </div></div>
   )
@@ -1203,16 +1374,17 @@ function VerifyWidget({ initialId }) {
           <p style={{ margin: '10px 0 0' }}>{t('verify_notfound')}</p></div>
       )}
       {result && (
-        <div className={'result ' + result.status}><span className={'badge ' + result.status}>{result.status}</span>
-          {result.photo && <div style={{ marginTop: 12 }}><img src={result.photo} alt="Certificate holder" style={{ width: 100, height: 116, objectFit: 'cover', borderRadius: 10, border: '2px solid ' + (result.status === 'VALID' ? 'var(--green)' : 'var(--line)') }} /></div>}
-          <p style={{ margin: '12px 0 4px', fontFamily: 'Lora, serif', fontSize: 18 }}>{result.name}</p>
-          <div className="muted" style={{ fontSize: 13.5 }}>
-            <div>{result.safeplateId || result.safeplate_id}</div>
-            <div>Panel: {result.panel}</div>
-            <div>Laboratory: {result.lab}</div>
-            <div>Expires: {new Date(result.expiry || result.expiry_date).toLocaleDateString('en-GB')}</div>
+        <div className={'trust ' + (result.status === 'VALID' ? 'ok' : 'no')} style={{ marginTop: 8 }}>
+          <div className="seal-wrap">{result.status === 'VALID' ? <Seal size={110} /> : <CrossSeal size={110} />}</div>
+          <div className="who2" style={{ flex: 1, minWidth: 210 }}>
+            <span className={'badge ' + result.status}>{result.status === 'VALID' ? 'Valid certificate' : result.status === 'EXPIRED' ? 'Expired' : 'Revoked'}</span>
+            <b style={{ marginTop: 10 }}>{result.name}</b>
+            <div className="mono" style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>{result.safeplateId || result.safeplate_id}</div>
+            <div className="muted" style={{ fontSize: 13.5, lineHeight: 1.75 }}>Panel: {result.panel}<br />Laboratory: {result.lab}<br />Expires {new Date(result.expiry || result.expiry_date).toLocaleDateString('en-GB')}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Checked {new Date().toLocaleString('en-GB')}</div>
+            {result.status === 'VALID' && <button className="btn g" style={{ marginTop: 14 }} onClick={() => generateCertPDF(result)}>Download certificate (PDF)</button>}
           </div>
-          {result.status === 'VALID' && <button className="btn g block" style={{ marginTop: 14 }} onClick={() => generateCertPDF(result)}>Download certificate (PDF)</button>}
+          {result.photo && <img src={result.photo} alt="Certificate holder" style={{ width: 108, height: 128, objectFit: 'cover', borderRadius: 12, border: '3px solid ' + (result.status === 'VALID' ? 'var(--green)' : '#e3c9c9'), boxShadow: 'var(--sh-md)' }} />}
         </div>
       )}
     </div>
@@ -1224,7 +1396,7 @@ function VerifyPage({ initialId }) {
     <div className="page"><div className="wrap">
       <div className="kicker">{t('verify_kicker')}</div>
       <h2 className="sec serif">{t('verify_title')}</h2>
-      <p className="sub">{t('verify_sub')} Try SP-LG-2026004821 (valid), SP-LG-2025008114 (expired), SP-LG-2026001990 (revoked).</p>
+      <p className="sub">{t('verify_sub')} Try SP-LG-2026001015 (valid), SP-LG-2025001037 (expired), SP-LG-2026001042 (revoked).</p>
       <VerifyWidget initialId={initialId} />
     </div></div>
   )
@@ -1341,6 +1513,99 @@ function AuthFlow({ onDone, onBack }) {
 
 const STEP_LABELS = ['Register', 'Tests', 'Laboratory', 'Payment', 'Done']
 
+function AppealButton({ kind, subject, agency, by, label }) {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
+  async function submit() { if (!reason.trim()) return; setBusy(true); try { await store.createAppeal({ kind, subject, agency, appellant: by || 'unknown', reason: reason.trim() }); setDone(true); toast('Appeal lodged with ' + agency + '. You will be contacted with the outcome.') } catch (e) { toast('Could not lodge the appeal, please try again.', 'err') } setBusy(false) }
+  if (done) return <div className="note" style={{ marginTop: 12 }}>Your appeal has been lodged with {agency}. You will be contacted with the outcome.</div>
+  return (
+    <div style={{ marginTop: 12 }}>
+      {!open && <button className="btn sm" onClick={() => setOpen(true)}>{label || 'Lodge an appeal'}</button>}
+      {open && (
+        <div className="card">
+          <div className="kicker" style={{ color: 'var(--green)' }}>Lodge an appeal to {agency}</div>
+          <div className="field"><label>Reason for appeal</label><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Explain why you believe this decision should be reviewed" /></div>
+          <div className="row-between"><button className="btn ghost sm" onClick={() => setOpen(false)}>Cancel</button><button className="btn p sm" onClick={submit} disabled={busy || !reason.trim()}>{busy ? 'Submitting...' : 'Submit appeal'}</button></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AppealsList({ agency }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { setRows(await store.listAppeals(agency)) }
+  async function resolve(a, status) { await store.resolveAppeal(a.id, status === 'Upheld' ? 'Appeal upheld, decision reversed' : 'Appeal declined, decision stands', status); load() }
+  if (!rows) return null
+  return (
+    <div style={{ marginTop: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Appeals</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 12 }}>Appeals lodged for {agency} review, from food handlers, employers and laboratories.</p>
+      {rows.length === 0 && <div className="placeholder">No appeals lodged.</div>}
+      {rows.map((a, i) => (
+        <div className="ord" key={a.id || i} style={{ marginBottom: 10 }}>
+          <div className="top"><div><b>{a.subject}</b> <span className="muted" style={{ fontSize: 12 }}>· {a.kind} · {a.appellant}</span></div><span className="badge" style={a.status === 'Open' ? { background: '#fdf3e0', color: '#8a5a00' } : { background: 'var(--green-pale)', color: 'var(--green)' }}>{a.status}</span></div>
+          <div className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>{a.reason}</div>
+          {a.status === 'Open' && <div className="row-between" style={{ marginTop: 10 }}><button className="btn sm" onClick={() => resolve(a, 'Declined')}>Decline</button><button className="btn p sm" onClick={() => resolve(a, 'Upheld')}>Uphold appeal</button></div>}
+          {a.resolution && <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>Outcome: {a.resolution}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function journeyStep(order, cert) {
+  if (cert && cert.status === 'VALID') return 6
+  const st = (order && order.status) || ''
+  if (/Rejected|Flagged/.test(st)) return 5
+  if (st === 'Submitted') return 5
+  if (/Approved/.test(st)) return 6
+  if (/Scheduled|Sample|Testing/.test(st)) return 4
+  return 3
+}
+
+function FoodDashboard({ data, session, onNew }) {
+  const { h, cert, order } = data
+  const step = journeyStep(order, cert)
+  const valid = cert && cert.status === 'VALID'
+  const st = (order && order.status) || ''
+  const issue = /Rejected|Flagged/.test(st)
+  const days = cert && cert.expiry ? Math.ceil((new Date(cert.expiry).getTime() - Date.now()) / 86400000) : null
+  return (
+    <div className="page"><div className="wrap">
+      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Hello, {(h.name || '').split(' ')[0]}</h2><span className="muted" style={{ fontSize: 13 }}>{session.title}</span></div>
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="row-between">
+          <div><div className="kicker" style={{ color: 'var(--green)' }}>Your SAFEPLATE ID</div><div className="mono" style={{ fontSize: 20, fontWeight: 600, color: 'var(--ink)' }}>{h.safeplateId}</div></div>
+          {valid ? <span className="badge VALID">CERTIFIED</span> : <span className="badge" style={{ background: issue ? '#fdeeee' : '#fdf3e0', color: issue ? '#b3261e' : '#8a5a00' }}>{issue ? st : 'IN PROGRESS'}</span>}
+        </div>
+      </div>
+      <FoodJourney step={step} />
+      {valid && (
+        <div className="card">
+          <div className="row-between" style={{ alignItems: 'flex-start' }}>
+            <div>
+              <div className="kicker" style={{ color: 'var(--green)' }}>Certificate of Fitness</div>
+              <h3 className="serif" style={{ fontSize: 20, margin: '4px 0' }}>{h.name}</h3>
+              <div className="muted" style={{ fontSize: 13 }}>{cert.cert_no || cert.certNo || ''}</div>
+              <div style={{ marginTop: 10, fontSize: 14 }}>Expires {new Date(cert.expiry).toLocaleDateString('en-GB')}</div>
+              <div style={{ fontWeight: 700, color: days <= 30 ? '#b3261e' : 'var(--green)', marginTop: 2 }}>{days > 0 ? days + ' days remaining' : 'Expired, renew now'}</div>
+              <button className="btn g" style={{ marginTop: 14 }} onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
+            </div>
+            {(cert.photo || h.photo) && <img src={cert.photo || h.photo} alt="" style={{ width: 96, height: 112, objectFit: 'cover', borderRadius: 10, border: '2px solid var(--green)' }} />}
+          </div>
+        </div>
+      )}
+      {issue && <AppealButton kind="result" subject={h.safeplateId} agency="LSMoH" by={session.email} label="Lodge an appeal on this result" />}
+      {!valid && !issue && <div className="note" style={{ marginTop: 4 }}>Your test is progressing. Once the Ministry approves your result, your Certificate of Fitness appears here.</div>}
+      <button className="btn ghost sm" style={{ marginTop: 16 }} onClick={onNew}>Start a new registration</button>
+    </div></div>
+  )
+}
+
 function FoodHandlerModule({ session }) {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState({ name: session.name || '', phone: '', dob: '', gender: '', address: '', lga: '', nin: '', email: session.email || '', employer: '', employerAddress: '', photo: '', safeplateId: '', lab: null, paid: false })
@@ -1348,6 +1613,10 @@ function FoodHandlerModule({ session }) {
   const [busy, setBusy] = useState(false)
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const nextDue = useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() + 6); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) }, [])
+  const [checking, setChecking] = useState(true)
+  const [mine, setMine] = useState(null)
+  const [showWizard, setShowWizard] = useState(false)
+  useEffect(() => { (async () => { try { const hh = await store.getMyHandler(session); if (hh) { const cert = await store.verifyCertificate(hh.safeplateId); const order = await store.getOrderFor(hh.safeplateId); setMine({ h: hh, cert, order }) } } catch (e) { /* ignore */ } setChecking(false) })() /* eslint-disable-next-line */ }, [])
 
   async function register() {
     setErr('')
@@ -1379,9 +1648,12 @@ function FoodHandlerModule({ session }) {
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
       await store.notify(session.email, 'Payment received', naira(FEE) + ' held in escrow for your test')
       await store.dispatch(form.phone, 'sms', 'SafePlate: your ' + naira(FEE) + ' test payment is confirmed. ID ' + form.safeplateId)
-      setF('paid', true); setStep(4)
+      setF('paid', true); setStep(4); toast('Payment received, held in escrow.')
     } catch (e) { setErr('Payment could not be completed. Your test order is saved for 48 hours, try again.') } finally { setBusy(false) }
   }
+
+  if (checking) return <div className="page"><div className="wrap"><div className="skelrow"><div className="skel" style={{height:80}} /><div className="skel" style={{height:120}} /><div className="skel" style={{height:180}} /></div></div></div>
+  if (mine && !showWizard) return <FoodDashboard data={mine} session={session} onNew={() => { setShowWizard(true); setStep(0) }} />
 
   return (
     <div className="page"><div className="wrap">
@@ -1436,9 +1708,9 @@ function FoodHandlerModule({ session }) {
           <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s4')}</h3><span className="st">Step 4 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Your {naira(FEE)} is held in Sterling Bank escrow and released only after the Ministry approves your results. Payment is by Paystack.</p>
           <table className="split-tbl"><tbody>
-            <tr><td colSpan={2} style={{ fontWeight: 700 }}>Laboratory: {form.lab?.name}</td></tr>
-            {WATERFALL.map(w => <tr key={w.who}><td>{w.who} <span className="muted">({w.pct}%)</span></td><td>{naira(w.amount)}</td></tr>)}
-            <tr className="tot"><td>Total fee</td><td>{naira(FEE)}</td></tr>
+            <tr><td>Laboratory</td><td>{form.lab?.name}</td></tr>
+            <tr><td>Test panel</td><td>Hepatitis A, Hepatitis E, Stool MC</td></tr>
+            <tr className="tot"><td>Amount held in escrow</td><td>{naira(FEE)}</td></tr>
           </tbody></table>
           <button className="btn p block" style={{ marginTop: 18 }} onClick={pay} disabled={busy}>{busy ? 'Processing with Paystack...' : 'Pay ' + naira(FEE) + ' into escrow'}</button>
         </div>
@@ -1487,6 +1759,7 @@ function LaboratoryModule({ session }) {
       </div>
       <div className="note" style={{ marginBottom: 18 }}>You see only this laboratory's orders. Results are encrypted at rest (AES-256) in the connected build, and payment is released only after Ministry approval, not on upload.</div>
       <Insights session={session} />
+      <AppealButton kind="laboratory" subject={labName} agency="LSMoH" by={session.email} label="Raise a dispute or appeal with the Ministry" />
       {loading && <p className="muted">Loading queue...</p>}
       {!loading && orders.length === 0 && <div className="placeholder">No orders in this laboratory's queue yet. New paid orders appear here automatically.</div>}
       {!loading && orders.map(o => <OrderCard key={o.id} order={o} lab={lab} onAdvance={advance} onRefresh={refresh} />)}
@@ -1573,9 +1846,9 @@ function RegulatorModule({ session, tab }) {
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
       {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
-      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
+      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
-      {tab === 'enforcement' && <Enforcement guard={guard} audit={audit} />}
+      {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} /><AppealsList agency="LASEPA" /></>}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'audit' && <AuditPanel />}
@@ -1591,9 +1864,9 @@ function LSMoHReview({ session, guard, audit }) {
   async function refresh() { setLoading(true); const all = await store.listAllOrders(); setOrders(all.filter(o => o.status === 'Submitted')); setLoading(false) }
   useEffect(() => { refresh() }, [])
   async function approve(o) {
-    if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); refresh(); return }
+    if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); toast('Result approved, certificate issued.'); refresh(); return }
     const anyRefer = o.results && o.tests.some(t => o.results[t] === 'refer')
-    if (anyRefer) { await store.updateOrder(o.id, { status: 'Rejected' }); await audit('Result rejected, referral pathway triggered, escrow held', o.safeplateId) }
+    if (anyRefer) { await store.updateOrder(o.id, { status: 'Rejected' }); await audit('Result rejected, referral pathway triggered, escrow held', o.safeplateId); toast('Result rejected, referral pathway triggered.', 'warn') }
     else {
       const now = Date.now(), day = 86400000
       const holderPhoto = await store.getHandlerPhoto(o.safeplateId)
@@ -1604,10 +1877,11 @@ function LSMoHReview({ session, guard, audit }) {
       await store.notify('sterling', 'Escrow release instructed', o.safeplateId)
       await store.notify('all', 'Certificate issued', o.handlerName + ' is now certified')
       await store.dispatch(o.phone, 'sms', 'SafePlate: your Certificate of Fitness is issued. Verify at ' + o.safeplateId)
+      toast('Result approved, certificate issued.')
     }
     refresh()
   }
-  async function flag(o) { if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'flag' }); refresh(); return } await store.updateOrder(o.id, { status: 'Flagged' }); await audit('Flagged for further review, escrow held', o.safeplateId); refresh() }
+  async function flag(o) { if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'flag' }); toast('Result flagged for review.', 'warn'); refresh(); return } await store.updateOrder(o.id, { status: 'Flagged' }); await audit('Flagged for further review, escrow held', o.safeplateId); toast('Result flagged for review.', 'warn'); refresh() }
   const shown = orders.filter(o => { const q = search.trim().toLowerCase(); return !q || (o.safeplateId || '').toLowerCase().includes(q) || (o.handlerName || '').toLowerCase().includes(q) })
 
   return (
@@ -1638,8 +1912,8 @@ function CertAdmin({ guard, audit }) {
   const [busy, setBusy] = useState(false)
   useEffect(() => { load() /* eslint-disable-next-line */ }, [])
   async function load() { const all = await store.listAllCertificates(); all.sort((a, b) => String(b.issued || '').localeCompare(String(a.issued || ''))); setRows(all) }
-  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; setBusy(true); if (SUPABASE_READY) { await store.fn('revoke-certificate', { safeplateId: cid }) } else { await store.revokeCertificate(cid); await audit('Certificate revoked', cid) } await load(); setBusy(false) }
-  if (!rows) return <p className="muted">Loading certificates...</p>
+  async function revoke(c) { const cid = c.safeplateId || c.safeplate_id; setBusy(true); if (SUPABASE_READY) { await store.fn('revoke-certificate', { safeplateId: cid }) } else { await store.revokeCertificate(cid); await audit('Certificate revoked', cid) } await load(); toast('Certificate revoked.', 'warn'); setBusy(false) }
+  if (!rows) return <div className="skelrow"><div className="skel" style={{height:74}} /><div className="skel" style={{height:44}} /><div className="skel" style={{height:220}} /></div>
   const ql = q.trim().toLowerCase()
   const key = c => ((c.safeplateId || c.safeplate_id || '') + ' ' + (c.name || '') + ' ' + (c.cert_no || c.certNo || c.series || '') + ' ' + (c.status || '') + ' ' + (c.lab || '')).toLowerCase()
   const shown = rows.filter(c => !ql || key(c).includes(ql))
@@ -1838,10 +2112,11 @@ function SterlingModule({ session, tab }) {
   ]
 
   async function release(e) {
-    if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }); refresh(); return }
+    if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }); toast('Escrow released, full waterfall disbursed.'); refresh(); return }
     await store.releaseEscrow(e.safeplateId, session.name)
     await store.appendAudit({ actor: session.name, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: e.safeplateId })
     await store.notify('laboratory', 'Payment released', e.safeplateId + ', ' + naira(e.amount))
+    toast('Escrow released, full waterfall disbursed.')
     refresh()
   }
 
@@ -1951,7 +2226,29 @@ function EmployerTeam({ session }) {
     }
     const b = { ...biz }; await store.saveBusiness(session.email, b); setBiz(b)
     setMsg('Registered and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
+    toast('Enrolled ' + pending.length + ' staff into testing.')
     setBusy(false)
+  }
+  async function bulkAddCsv(file) {
+    setMsg('')
+    let text = ''
+    try { text = await file.text() } catch (e) { setMsg('Could not read that file.'); return }
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+    const rows = []
+    for (const line of lines) {
+      const parts = line.split(',').map(x => x.trim())
+      if (!parts[0] || !parts[1]) continue
+      if (/^(full ?)?name$/i.test(parts[0])) continue
+      rows.push({ id: 'S' + Date.now() + Math.floor(Math.random() * 100000), name: parts[0], phone: parts[1], email: parts[2] || '', status: 'Not registered' })
+    }
+    if (!rows.length) { setMsg('No valid rows found. Use columns: name, phone, email (optional).'); return }
+    const b = { ...biz, staff: [...biz.staff, ...rows] }
+    await store.saveBusiness(session.email, b); setBiz(b)
+    setMsg('Added ' + rows.length + ' staff from file. Use Register and bulk-pay below to enrol them.')
+  }
+  function downloadTemplate() {
+    const csv = 'name,phone,email\nAdaeze Nwosu,08031110001,ada@example.com\nBode Adekunle,08031110002,\n'
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'safeplate-staff-template.csv'; a.click()
   }
 
   if (biz === undefined) return <div className="page"><div className="wrap"><p className="muted">Loading...</p></div></div>
@@ -1995,7 +2292,15 @@ function EmployerTeam({ session }) {
           <div className="field" style={{ flex: 1, marginBottom: 0, minWidth: 140 }}><label>Phone</label><input value={sPhone} onChange={e => setSPhone(e.target.value)} placeholder="080..." /></div>
           <button className="btn sm" onClick={addStaff}>Add</button>
         </div>
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+          <label className="muted" style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Or bulk-upload your whole team from a CSV (columns: name, phone, email optional)</label>
+          <div className="row-between" style={{ alignItems: 'center' }}>
+            <input type="file" accept=".csv,text/csv" onChange={e => { const f = e.target.files && e.target.files[0]; if (f) bulkAddCsv(f); e.target.value = '' }} />
+            <button className="btn ghost sm" onClick={downloadTemplate}>Download template</button>
+          </div>
+        </div>
       </div>
+      <AppealButton kind="establishment" subject={biz.name} agency="LASEPA" by={session.email} label="Appeal a sanction or compliance decision" />
 
       {pendingCount > 0 && (
         <div className="row-between" style={{ marginBottom: 14 }}>
@@ -2119,7 +2424,7 @@ function WaterReview({ session, guard, audit }) {
   useEffect(() => { refresh() }, [])
 
   async function approve(w) {
-    if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'approve' }); refresh(); return }
+    if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'approve' }); toast('Water result approved, certificate issued.'); refresh(); return }
     const now = Date.now(), day = 86400000
     const series = makeWaterCertSeries()
     await store.issueCertificate({ safeplateId: w.swid, name: w.facility, panel: 'Potable water quality', lab: w.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', series })
@@ -2129,9 +2434,10 @@ function WaterReview({ session, guard, audit }) {
     await store.notify(w.ownerEmail, 'Water certificate issued', w.facility + ' is now certified')
     await store.notify('all', 'Facility water certified', w.facility)
     await store.dispatch(w.contact, 'sms', 'SafePlate: ' + w.facility + ' water certificate issued, ref ' + series)
+    toast('Water result approved, certificate issued.')
     refresh()
   }
-  async function flag(w) { if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); refresh(); return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); refresh() }
+  async function flag(w) { if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); toast('Water result flagged, retest required.', 'warn'); refresh(); return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); toast('Water result flagged, retest required.', 'warn'); refresh() }
 
   const pending = tests.filter(w => w.status === 'Submitted, pending LASEPA')
   const done = tests.filter(w => w.status !== 'Submitted, pending LASEPA')
@@ -2343,7 +2649,7 @@ function Analytics() {
       setD({ by, cby, heldAmt: sum(held), relAmt: sum(rel), relN: rel.length, food: esc.filter(e => e.type !== 'WATER').length, water: esc.filter(e => e.type === 'WATER').length, valid: cby['VALID'] || 0, orders: orders.length, waterN: water.length })
     })
   }, [])
-  if (!d) return <p className="muted">Loading analytics...</p>
+  if (!d) return <div className="skelrow"><div className="skel" style={{height:74}} /><div className="skel" style={{height:230}} /></div>
   const certColor = k => k === 'VALID' ? CHART[0] : k === 'EXPIRED' ? CHART[1] : CHART[4]
   return (
     <div>
@@ -2529,12 +2835,21 @@ export default function App() {
     return null
   }
 
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll('.reveal:not(.in)'))
+    if (!els.length) return
+    if (!('IntersectionObserver' in window)) { els.forEach(e => e.classList.add('in')); return }
+    const io = new IntersectionObserver(ents => ents.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target) } }), { threshold: 0.1, rootMargin: '0px 0px -8% 0px' })
+    els.forEach(e => io.observe(e)); return () => io.disconnect()
+  }, [mode, tab, session])
+
   return (
     <>
       <Styles />
+      <Toasts />
       <GovBar />
       {session ? (
-        <div className="applayout">
+        <div className="applayout" style={{ ['--accent']: accentFor(eff) }}>
           <Sidebar tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} open={navOpen} onClose={() => setNavOpen(false)} />
           <div className="appmain">
             <AppTopBar session={session} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} onMenu={() => setNavOpen(v => !v)} />

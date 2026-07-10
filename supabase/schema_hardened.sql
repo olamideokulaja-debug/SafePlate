@@ -180,3 +180,17 @@ alter table food_handlers add column if not exists photo text;
 -- Holder photo on the certificate (printed on the PDF and shown on public
 -- verification so a certificate cannot be used by anyone else).
 alter table certificates add column if not exists photo text;
+
+-- Appeals lodged by food handlers, employers or laboratories, routed to a regulator.
+create table if not exists appeals (
+  id bigint generated always as identity primary key,
+  kind text, subject text, appellant text, agency text, reason text,
+  status text default 'Open', resolution text, created_at timestamptz default now()
+);
+alter table appeals enable row level security;
+drop policy if exists appeals_insert on appeals;
+drop policy if exists appeals_select on appeals;
+drop policy if exists appeals_update on appeals;
+create policy appeals_insert on appeals for insert to authenticated with check (true);
+create policy appeals_select on appeals for select to authenticated using (is_regulator() or appellant = auth.jwt() ->> 'email');
+create policy appeals_update on appeals for update to authenticated using (is_regulator()) with check (is_regulator());
