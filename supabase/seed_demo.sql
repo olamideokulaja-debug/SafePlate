@@ -309,3 +309,13 @@ on conflict (owner_email) do nothing;
 -- delete from escrow where safeplate_id like 'SP-%'; delete from escrow_releases where safeplate_id like 'SP-%';
 -- delete from water_tests where owner_email='seed'; delete from food_handlers where safeplate_id like 'SP-LG-%';
 -- delete from establishments where id like 'EST-%'; delete from audit_log where ip='captured server-side';
+
+-- Field officers (roster). Officers sign in with these emails; Pending ones await approval.
+insert into officers (id,name,email,phone,badge,agency,lga,status,created_at) values
+  ('OFF-001','Grace Adeyemi','grace.officer@lasepa.ng','08039000001','LASEPA-014','LASEPA','Eti-Osa','Active', now() - interval '30 days'),
+  ('OFF-002','Musa Bello','musa.officer@lasepa.ng','08039000002','LASEPA-021','LASEPA','Ikeja','Active', now() - interval '25 days'),
+  ('OFF-003','Ngozi Okafor','ngozi.officer@lasepa.ng','08039000003','LASEPA-033','LASEPA','Surulere','Pending', now() - interval '2 days'),
+  ('OFF-004','Tunde Balogun','tunde.officer@lsmoh.ng','08039000011','LSMoH-108','LSMoH','Lagos Mainland','Active', now() - interval '28 days'),
+  ('OFF-005','Aisha Yusuf','aisha.officer@lsmoh.ng','08039000012','LSMoH-115','LSMoH','Mushin','Active', now() - interval '20 days'),
+  ('OFF-006','Femi Ojo','femi.officer@hefamaa.ng','08039000021','HEF-052','HEFAMAA','Ikeja','Active', now() - interval '15 days')
+on conflict (email) do nothing;

@@ -194,3 +194,50 @@ drop policy if exists appeals_update on appeals;
 create policy appeals_insert on appeals for insert to authenticated with check (true);
 create policy appeals_select on appeals for select to authenticated using (is_regulator() or appellant = auth.jwt() ->> 'email');
 create policy appeals_update on appeals for update to authenticated using (is_regulator()) with check (is_regulator());
+
+-- ============================================================
+-- Field officers (inspectors) and their field inspections.
+-- ============================================================
+create or replace function is_officer() returns boolean language sql stable as
+$$ select auth_role() = 'officer' $$;
+
+create table if not exists officers (
+  id text primary key,
+  name text, email text unique, phone text, badge text, agency text, lga text,
+  status text default 'Pending', created_at timestamptz default now()
+);
+alter table officers enable row level security;
+drop policy if exists officers_select on officers;
+drop policy if exists officers_insert on officers;
+drop policy if exists officers_update on officers;
+create policy officers_select on officers for select to authenticated
+  using (is_regulator() or email = auth.jwt() ->> 'email');
+create policy officers_insert on officers for insert to authenticated
+  with check (is_regulator() or email = auth.jwt() ->> 'email');
+create policy officers_update on officers for update to authenticated
+  using (is_regulator()) with check (is_regulator());
+
+create table if not exists inspections (
+  id text primary key,
+  officer text, officer_email text, agency text, kind text, subject text,
+  outcome text, sanction text, sanction_status text, note text, target_id text,
+  ts timestamptz default now()
+);
+alter table inspections enable row level security;
+drop policy if exists inspections_select on inspections;
+drop policy if exists inspections_insert on inspections;
+drop policy if exists inspections_update on inspections;
+create policy inspections_select on inspections for select to authenticated
+  using (is_regulator() or officer_email = auth.jwt() ->> 'email');
+create policy inspections_insert on inspections for insert to authenticated
+  with check (officer_email = auth.jwt() ->> 'email' or is_regulator());
+create policy inspections_update on inspections for update to authenticated
+  using (is_regulator()) with check (is_regulator());
+
+-- Officers can read establishments, apply field warnings, and log water samples.
+drop policy if exists est_officer_select on establishments;
+drop policy if exists est_officer_update on establishments;
+create policy est_officer_select on establishments for select to authenticated using (is_officer());
+create policy est_officer_update on establishments for update to authenticated using (is_officer()) with check (is_officer());
+drop policy if exists water_officer_insert on water_tests;
+create policy water_officer_insert on water_tests for insert to authenticated with check (is_officer());
