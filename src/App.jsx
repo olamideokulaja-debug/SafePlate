@@ -133,8 +133,129 @@ const STRINGS = {
     fh_title: 'Àyẹ̀wò rẹ', fh_s1: 'Forúkọsílẹ̀ kí o sì gba ID SAFEPLATE rẹ', fh_s2: 'Àkójọ àyẹ̀wò dandan rẹ', fh_s3: 'Yan ilé-ìwádìí tí a fọwọ́sí', fh_s4: 'San sí ìṣúra ààbò',
     lbl_fullname: 'Orúkọ kíkún', lbl_phone: 'Nọ́mbà fóònù', lbl_nin: 'NIN (àṣàyàn)', lbl_email: 'Ímeèlì (àṣàyàn)', lbl_employer: 'Agbaniṣíṣẹ́ (àṣàyàn)',
     btn_create_id: 'Ṣẹ̀dá ID SAFEPLATE mi', btn_choose_lab: 'Yan ilé-ìwádìí', fh_mandatory: 'Dandan', fh_id_assigned: 'ID SAFEPLATE tí a fún ọ:', fh_done: 'A ti forúkọsílẹ̀ rẹ, a sì ti san. A ti ṣètò àyẹ̀wò rẹ.'
+  },
+  ig: {
+    signin: 'Banye',
+    signout: 'Puo',
+    back: 'Laghachi',
+    nav_overview: 'Nchikota',
+    nav_system: 'Usoro ahu',
+    nav_impact: 'Mmetuta',
+    nav_fees: 'Ugwo',
+    nav_verify: 'Nyochaa',
+    nav_testing: 'Nnwale m',
+    nav_queue: 'Kwu ulo nyocha',
+    nav_team: 'Ndi otu m',
+    nav_water: 'Nnwale mmiri',
+    nav_review: 'Nyocha',
+    nav_certificates: 'Asambodo',
+    nav_analytics: 'Nyocha data',
+    nav_audit: 'Ndeko omume',
+    nav_enforcement: 'Mmanye iwu',
+    nav_accreditation: 'Nkwenye',
+    nav_ledger: 'Akwukwo ego escrow',
+    nav_releases: 'Nhapu ego',
+    nav_fund: 'Ego',
+    nav_reconcile: 'Nkweko akaunti',
+    hero_eyebrow: 'Na steeti niile, nrube isi ndu',
+    hero_title: 'Efere obula na Lagos, nwere onye na-ejikwa nri e nyochara.',
+    hero_lede: 'SafePlate na-edebanye aha, na-anwale, na-enye asambodo ma na-elekota onye obula na-ejikwa nri na Steeti Lagos, site na ulo nyocha akwadoro, ebe a na-edobe ugwo na escrow ma hapu ya naani mgbe a kwadoro nsonaazu.',
+    cta_register: 'Debanye aha dika onye na-ejikwa nri',
+    cta_verify: 'Nyochaa asambodo',
+    chip_active: 'asambodo na-aru oru',
+    chip_compliance: 'nrube isi',
+    chip_secure: 'Ikwu ugwo escrow chekwara',
+    hero_model: 'Usoro doro anya, nke na-akwado onwe ya, enweghi ugwo zoro ezo.',
+    sys_kicker: 'Usoro ahu',
+    sys_title: 'Ogidi ano, otu ikpo okwu na-aza ajuju',
+    imp_kicker: 'Ihe kpatara o ji di mkpa',
+    imp_title: 'A na-atu onu ahia nri na-adighi mma na ndu',
+    fees_kicker: 'Ugwo doro anya',
+    fees_title: 'Ihe i na-akwu, na ebe o na-aga',
+    verify_kicker: 'Nyocha oha',
+    verify_title: 'Nyochaa asambodo onye na-ejikwa nri',
+    verify_sub: 'Tinye SAFEPLATE ID iji kwado onodu, nnwale na oge o ga-agwu. I choghi akaunti.',
+    verify_label: 'ID asambodo',
+    verify_btn: 'Nyochaa asambodo',
+    verify_notfound: 'O dighi asambodo dabara na ID ahu. Lelee ID ahu ma nwaa ozo.',
+    fh_title: 'Nnwale gi',
+    fh_s1: 'Debanye aha ma nweta SAFEPLATE ID gi',
+    fh_s2: 'Nnwale i ga-eme',
+    fh_s3: 'Horo ulo nyocha akwadoro',
+    fh_s4: 'Kwuo ego na escrow',
+    lbl_fullname: 'Aha gi zuru ezu',
+    lbl_phone: 'Nomba ekwenti',
+    lbl_nin: 'NIN (nhoro, anyi ga-enyocha ya ma i tinye ya)',
+    lbl_email: 'Email (nhoro)',
+    lbl_employer: 'Onye i na-aruru oru (nhoro)',
+    btn_create_id: 'Mepuata SAFEPLATE ID m',
+    btn_choose_lab: 'Horo ulo nyocha',
+    fh_mandatory: 'Iwu kwadoro',
+    fh_id_assigned: 'E nyere SAFEPLATE ID:',
+    fh_done: 'I debanyela aha ma kwuo ugwo. A haziela nnwale gi.'
+  },
+  pcm: {
+    signin: 'Sign in',
+    signout: 'Comot',
+    back: 'Go back',
+    nav_overview: 'Overview',
+    nav_system: 'How e dey work',
+    nav_impact: 'Why e matter',
+    nav_fees: 'Money matter',
+    nav_verify: 'Check am',
+    nav_testing: 'My test',
+    nav_queue: 'Lab queue',
+    nav_team: 'My people',
+    nav_water: 'Water test',
+    nav_review: 'Review',
+    nav_certificates: 'Certificate',
+    nav_analytics: 'Report',
+    nav_audit: 'Audit trail',
+    nav_enforcement: 'Enforcement',
+    nav_accreditation: 'Accreditation',
+    nav_ledger: 'Escrow ledger',
+    nav_releases: 'Release',
+    nav_fund: 'Fund',
+    nav_reconcile: 'Reconciliation',
+    hero_eyebrow: 'Everywhere for Lagos, live compliance',
+    hero_title: 'Every plate for Lagos, na food handler wey dem don check dey behind am.',
+    hero_lede: 'SafePlate dey register, test, certify and monitor every food handler for Lagos State, through labs wey dem approve, with payment wey dey inside escrow wey dem go only release after dem approve result.',
+    cta_register: 'Register as food handler',
+    cta_verify: 'Check certificate',
+    chip_active: 'certificate wey dey active',
+    chip_compliance: 'compliance',
+    chip_secure: 'Payment wey escrow dey guard',
+    hero_model: 'Model wey clear, wey fit carry himself, no hidden charge.',
+    sys_kicker: 'How e dey work',
+    sys_title: 'Four pillar, one platform wey dey answer question',
+    imp_kicker: 'Why e matter',
+    imp_title: 'Food wey no safe dey cost life',
+    fees_kicker: 'Fee wey clear',
+    fees_title: 'Wetin you dey pay, and where the money dey go',
+    verify_kicker: 'Public check',
+    verify_title: 'Check food handler certificate',
+    verify_sub: 'Put SAFEPLATE ID make you confirm status, panel and when e go expire. You no need account.',
+    verify_label: 'Certificate ID',
+    verify_btn: 'Check certificate',
+    verify_notfound: 'No certificate match that ID. Check the ID well well and try again.',
+    fh_title: 'Your test',
+    fh_s1: 'Register make you get your SAFEPLATE ID',
+    fh_s2: 'Test wey you must do',
+    fh_s3: 'Choose lab wey dem approve',
+    fh_s4: 'Pay into escrow',
+    lbl_fullname: 'Your full name',
+    lbl_phone: 'Phone number',
+    lbl_nin: 'NIN (optional, we go verify am if you put am)',
+    lbl_email: 'Email (optional)',
+    lbl_employer: 'Where you dey work (optional)',
+    btn_create_id: 'Create my SAFEPLATE ID',
+    btn_choose_lab: 'Choose lab',
+    fh_mandatory: 'Compulsory',
+    fh_id_assigned: 'Dem don give you SAFEPLATE ID:',
+    fh_done: 'You don register and you don pay. Dem don fix your test.'
   }
 }
+const LANGS = [{ id: 'en', label: 'English' }, { id: 'yo', label: 'Yoruba' }, { id: 'ig', label: 'Igbo' }, { id: 'pcm', label: 'Nigerian Pidgin' }]
 const I18N = { lang: (typeof localStorage !== 'undefined' && localStorage.getItem('safeplate:lang')) || 'en' }
 function t(key) { return (STRINGS[I18N.lang] && STRINGS[I18N.lang][key]) || STRINGS.en[key] || key }
 const tr = t
@@ -425,6 +546,15 @@ const store = {
   async updateOfficer(id, patch) {
     if (SUPABASE_READY) { await supabase.from('officers').update(toSnake(patch)).eq('id', id); return }
     const db = DEMO.read(); db.officers = db.officers || {}; db.officers[id] = { ...(db.officers[id] || {}), ...patch }; DEMO.write(db)
+  },
+  async createTicket(t) {
+    const rec = { ...t, status: 'Open', createdAt: new Date().toISOString() }
+    if (SUPABASE_READY) { const { error } = await supabase.from('support_tickets').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
+    const db = DEMO.read(); db.tickets = db.tickets || []; db.tickets.push({ id: Date.now(), ...rec }); DEMO.write(db); return rec
+  },
+  async listTickets() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false }); return camelList(data) }
+    const db = DEMO.read(); return (db.tickets || []).slice().reverse()
   },
   async createInspection(i) {
     const rec = { id: 'INS-' + Date.now() + Math.floor(Math.random() * 1000), ts: new Date().toISOString(), ...i }
@@ -1056,7 +1186,7 @@ function Styles() {
       .status.HELD{background:#fdf1dd;color:#9a6200}
       .status.RELEASED{background:#e7f4ec;color:#0a6b39}
       .audit-tbl{border-collapse:separate;border-spacing:0;border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-sm);background:#fff}
-      .audit-tbl thead th{position:sticky;top:0;background:#eef4f0;z-index:1;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line)}
+      .audit-tbl thead th{background:#eef4f0;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line)}
       .audit-tbl tbody td{padding:11px 14px;border-bottom:1px solid #eef1ee;font-size:13.5px}
       .audit-tbl tbody tr:nth-child(even){background:#fafcfb}
       .audit-tbl tbody tr:hover{background:var(--green-pale)}
@@ -1130,6 +1260,25 @@ function GovBar() {
   )
 }
 
+function LangPicker({ lang, onLang }) {
+  const [open, setOpen] = useState(false)
+  const cur = LANGS.find(l => l.id === lang) || LANGS[0]
+  return (
+    <div className="wswrap">
+      <button className="iconbtn lang" onClick={() => setOpen(v => !v)} aria-label="Switch language" aria-expanded={open}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
+        <span>{cur.id.toUpperCase()}</span>
+      </button>
+      {open && (
+        <div className="wsmenu" onMouseLeave={() => setOpen(false)}>
+          <div className="wshead">Language</div>
+          {LANGS.map(l => <button key={l.id} className={'wsitem ' + (l.id === lang ? 'on' : '')} onClick={() => { onLang(l.id); setOpen(false) }}><span className="wsdot" />{l.label}</button>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, lang, onLang, onPrivacy, admin, workspace, onSwitch }) {
   const [bell, setBell] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -1168,10 +1317,7 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
               )}
             </div>
           )}
-          <button className="iconbtn lang" onClick={() => onLang(lang === 'en' ? 'yo' : 'en')} aria-label="Switch language">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
-            <span>{lang.toUpperCase()}</span>
-          </button>
+          <LangPicker lang={lang} onLang={onLang} />
           {session ? (
             <>
               <div className="bellwrap">
@@ -1261,6 +1407,9 @@ function AppTopBar({ session, onSignOut, lang, onLang, onPrivacy, admin, workspa
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
       </button>
       <div className="actions">
+        <button className="iconbtn" onClick={openHelp} aria-label="Help and support" title="Help and support">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+        </button>
         {admin && (
           <div className="wswrap">
             <button className="wsbtn" onClick={() => { setWs(v => !v); setMenu(false); setBell(false) }} aria-label="Switch workspace">
@@ -1278,10 +1427,7 @@ function AppTopBar({ session, onSignOut, lang, onLang, onPrivacy, admin, workspa
             )}
           </div>
         )}
-        <button className="iconbtn lang" onClick={() => onLang(lang === 'en' ? 'yo' : 'en')} aria-label="Switch language">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20" /></svg>
-          <span>{lang.toUpperCase()}</span>
-        </button>
+        <LangPicker lang={lang} onLang={onLang} />
         <div className="bellwrap">
           <button className="iconbtn" onClick={toggleBell} aria-label="Notifications">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -1310,11 +1456,86 @@ function AppTopBar({ session, onSignOut, lang, onLang, onPrivacy, admin, workspa
   )
 }
 
+const SUPPORT = { phone: '0800-SAFE-PLATE', email: 'support@safeplate.lagosstate.gov.ng', hours: 'Monday to Friday, 8am to 5pm' }
+let _helpFns = []
+function openHelp() { _helpFns.forEach(f => f()) }
+
+function HelpCentre() {
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ category: 'Technical problem', subject: '', body: '', reporter: '' })
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  useEffect(() => { const fn = () => { setOpen(true); setDone(false) }; _helpFns.push(fn); return () => { _helpFns = _helpFns.filter(x => x !== fn) } }, [])
+  async function submit() {
+    if (!f.subject.trim() || !f.body.trim()) return
+    setBusy(true)
+    try { await store.createTicket({ reporter: f.reporter.trim() || 'anonymous', role: 'public', category: f.category, subject: f.subject.trim(), body: f.body.trim() }); setDone(true); toast('Your report has been sent to the SafePlate support team.') }
+    catch (e) { toast('Could not send your report. Please call ' + SUPPORT.phone + '.', 'err') }
+    setBusy(false)
+  }
+  if (!open) return null
+  return (
+    <div className="modal-bg" onClick={() => setOpen(false)}>
+      <div className="modal privacy" role="dialog" aria-modal="true" aria-label="Help and support" onClick={e => e.stopPropagation()}>
+        <div className="row-between" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <div className="kicker" style={{ color: 'var(--green)' }}>Help and support</div>
+            <h3 className="serif" style={{ fontSize: 22, margin: '2px 0 0' }}>We are here to help</h3>
+          </div>
+          <button className="btn ghost sm" onClick={() => setOpen(false)}>Close</button>
+        </div>
+        <div className="card" style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 14, lineHeight: 1.9 }}>
+            <div><b>Call:</b> <a href={'tel:' + SUPPORT.phone.replace(/[^0-9A-Za-z]/g, '')} style={{ color: 'var(--green)' }}>{SUPPORT.phone}</a> <span className="muted">({SUPPORT.hours})</span></div>
+            <div><b>Email:</b> <a href={'mailto:' + SUPPORT.email} style={{ color: 'var(--green)' }}>{SUPPORT.email}</a></div>
+          </div>
+        </div>
+        {done ? (
+          <div className="note" style={{ marginTop: 14 }}>Thank you. Your report has been logged and the support team will follow up. For anything urgent, call {SUPPORT.phone}.</div>
+        ) : (
+          <div style={{ marginTop: 14 }}>
+            <h4 className="serif" style={{ fontSize: 16, margin: '0 0 8px' }}>Report a problem</h4>
+            <div className="field"><label>What is this about?</label><select value={f.category} onChange={e => setF({ ...f, category: e.target.value })}><option>Technical problem</option><option>Payment problem</option><option>Certificate or result query</option><option>Report misconduct</option><option>Something else</option></select></div>
+            <div className="field"><label>Your email or phone (so we can reply)</label><input value={f.reporter} onChange={e => setF({ ...f, reporter: e.target.value })} placeholder="you@example.com or 080..." /></div>
+            <div className="field"><label>Subject</label><input value={f.subject} onChange={e => setF({ ...f, subject: e.target.value })} placeholder="Short summary" /></div>
+            <div className="field"><label>Details</label><textarea rows={3} value={f.body} onChange={e => setF({ ...f, body: e.target.value })} placeholder="Tell us what happened, and any SAFEPLATE ID involved" /></div>
+            <button className="btn p sm" onClick={submit} disabled={busy || !f.subject.trim() || !f.body.trim()}>{busy ? 'Sending...' : 'Send report'}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SupportTickets() {
+  const [rows, setRows] = useState(null)
+  const [q, setQ] = useState('')
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { try { setRows(await store.listTickets()) } catch (e) { setRows([]) } }
+  if (!rows || rows.length === 0) return null
+  const shown = rows.filter(t => smatch(q, t.subject, t.reporter, t.category, t.status))
+  return (
+    <div style={{ marginTop: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Support requests</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 12 }}>Problems reported by the public and by users through the help centre.</p>
+      <SearchBar value={q} onChange={setQ} placeholder="Search support requests..." />
+      {shown.length === 0 && <div className="placeholder">No support requests match your search.</div>}
+      {shown.slice(0, 50).map((t, i) => (
+        <div className="ord" key={t.id || i}>
+          <div className="top"><div><b>{t.subject}</b> <span className="muted" style={{ fontSize: 12 }}>· {t.category} · {t.reporter}</span></div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>{t.status || 'Open'}</span></div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>{t.body}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{t.createdAt ? new Date(t.createdAt).toLocaleString('en-GB') : ''}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Footer({ onPrivacy }) {
   return (
     <footer className="footer"><div className="wrap">
       <div><b>SafePlate</b><br />Operated by the Lagos State Ministry of Health.<br />Oversight: LSMoH, LASEPA, HEFAMAA. Escrow: Sterling Bank.</div>
-      <div style={{ textAlign: 'right' }}>One Health strategy for food and water safety.<br />NAFDAC Food Hygiene Regulation 2019, NDPA 2023 and GDPR aligned.<br /><button className="foot-lnk" onClick={onPrivacy}>Privacy notice</button> &middot; {SUPABASE_READY ? 'Connected backend' : 'Preview mode'}</div>
+      <div style={{ textAlign: 'right' }}>One Health strategy for food and water safety.<br />NAFDAC Food Hygiene Regulation 2019, NDPA 2023 and GDPR aligned.<br /><button className="foot-lnk" onClick={openHelp}>Help and support</button> · <button className="foot-lnk" onClick={onPrivacy}>Privacy notice</button> &middot; {SUPABASE_READY ? 'Connected backend' : 'Preview mode'}</div>
     </div></footer>
   )
 }
@@ -1505,7 +1726,7 @@ function AuthFlow({ onDone, onBack }) {
       if (finalUser.role === 'officer') {
         let off = await store.getOfficerByEmail(finalUser.email)
         if (!off) { off = await store.addOfficer({ name: finalUser.name, email: finalUser.email, agency: finalUser.agency, status: 'Pending' }) }
-        finalUser = { ...finalUser, status: off.status, badge: off.badge, lga: off.lga, agency: off.agency || finalUser.agency }
+        finalUser = { ...finalUser, status: off.status, badge: off.badge, lga: off.lga, target: off.target, agency: off.agency || finalUser.agency }
       }
       if (SUPABASE_READY && ['regulator', 'sterling'].includes(finalUser.role)) {
         await store.fn('send-otp', {}); setPendingUser(finalUser); setOtpStage(true); setBusy(false); return
@@ -1686,6 +1907,8 @@ function FoodHandlerModule({ session }) {
     setErr('')
     if (!form.name.trim() || !form.phone.trim()) { setErr('Name and phone number are required to register.'); return }
     if (!form.dob || !form.gender || !form.lga) { setErr('Date of birth, gender and LGA are required.'); return }
+    if (!/^0\d{10}$/.test((form.phone || '').replace(/\s+/g, ''))) { setErr('Enter a valid 11-digit phone number, e.g. 08031234567.'); return }
+    if (form.nin && !/^\d{11}$/.test((form.nin || '').replace(/\s+/g, ''))) { setErr('NIN must be exactly 11 digits.'); return }
     if (!form.photo) { setErr('A passport photo is required. It is printed on your certificate to prevent anyone else using it.'); return }
     if (!/^0?\d{10,11}$/.test(form.phone.replace(/\s+/g, ''))) { setErr('Enter a valid Nigerian phone number.'); return }
     setBusy(true)
@@ -1809,7 +2032,10 @@ function LaboratoryModule({ session }) {
   const lab = accreditedLabs.find(l => l.name === labName)
   async function refresh() { setLoading(true); setOrders(await store.listOrders(labName)); setLoading(false) }
   useEffect(() => { refresh() /* eslint-disable-next-line */ }, [labName])
-  async function advance(o, status) { await store.updateOrder(o.id, { status }); refresh() }
+  async function advance(o, status) {
+    if (SUPABASE_READY) { try { await store.fn('advance-order', { orderId: o.id, status }); toast('Sample updated: ' + status + '.'); refresh(); return } catch (e) { toast('Could not update the sample: ' + (e.message || 'try again'), 'err'); return } }
+    await store.updateOrder(o.id, { status }); toast('Sample updated: ' + status + '.'); refresh()
+  }
 
   return (
     <div className="page"><div className="wrap">
@@ -1905,18 +2131,30 @@ const MINI = { padding: '9px 12px', border: '1px solid var(--line)', borderRadiu
 
 function OfficersAdmin({ agency }) {
   const [officers, setOfficers] = useState(null)
-  const [nf, setNf] = useState({ name: '', email: '', phone: '', badge: '', lga: '' })
+  const [nf, setNf] = useState({ name: '', email: '', phone: '', badge: '', lga: '', target: '20' })
   const [pf, setPf] = useState({})
+  const [q, setQ] = useState('')
   useEffect(() => { load() /* eslint-disable-next-line */ }, [])
   async function load() { setOfficers(await store.listOfficers(agency)) }
   async function add() {
     if (!nf.name.trim() || !nf.email.trim()) return
-    await store.addOfficer({ ...nf, agency, status: 'Active' })
-    setNf({ name: '', email: '', phone: '', badge: '', lga: '' }); toast('Officer added to the roster.'); load()
+    if (nf.badge && officers.some(o => (o.badge || '') === nf.badge.trim())) { toast('That badge number is already in use.', 'err'); return }
+    await store.addOfficer({ ...nf, badge: nf.badge.trim(), target: Number(nf.target) || 20, agency, status: 'Active' })
+    setNf({ name: '', email: '', phone: '', badge: '', lga: '', target: '20' }); toast('Officer added to the roster.'); load()
   }
   async function approve(o) {
     const patch = pf[o.id] || {}
-    await store.updateOfficer(o.id, { status: 'Active', badge: patch.badge || o.badge || (agency + '-' + Math.floor(Math.random() * 900 + 100)), lga: patch.lga || o.lga || '' })
+    let badge = (patch.badge || o.badge || '').trim()
+    if (!badge) {
+      // Generate the next free badge for this agency rather than a random one,
+      // which could collide with a badge already issued.
+      const used = new Set(officers.map(x => (x.badge || '').trim()).filter(Boolean))
+      let n = 101
+      while (used.has(agency + '-' + n)) n++
+      badge = agency + '-' + n
+    }
+    if (officers.some(x => x.id !== o.id && (x.badge || '') === badge)) { toast('That badge number is already in use. Enter a different one.', 'err'); return }
+    await store.updateOfficer(o.id, { status: 'Active', badge, lga: patch.lga || o.lga || '' })
     toast('Officer approved and activated.'); load()
   }
   async function setStatus(o, status) { await store.updateOfficer(o.id, { status }); toast('Officer ' + status.toLowerCase() + '.'); load() }
@@ -1956,19 +2194,22 @@ function OfficersAdmin({ agency }) {
           <input placeholder="Phone" value={nf.phone} onChange={e => setNf({ ...nf, phone: e.target.value })} style={MINI} />
           <input placeholder="Badge no." value={nf.badge} onChange={e => setNf({ ...nf, badge: e.target.value })} style={MINI} />
           <select value={nf.lga} onChange={e => setNf({ ...nf, lga: e.target.value })} style={MINI}><option value="">LGA</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select>
+          <input placeholder="Monthly target" type="number" min="1" value={nf.target} onChange={e => setNf({ ...nf, target: e.target.value })} style={MINI} />
           <button className="btn p sm" onClick={add}>Add officer</button>
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>The officer signs in with this email and is active immediately. Officers who self-register appear above for your approval.</p>
       </div>
       <h3 className="serif" style={{ fontSize: 17, marginBottom: 8 }}>Roster</h3>
+      <SearchBar value={q} onChange={setQ} placeholder="Search officers by name, badge, area or email..." />
       <div style={{ overflowX: 'auto' }}>
         <table className="audit-tbl">
-          <thead><tr><th>Name</th><th>Badge</th><th>Area</th><th>Contact</th><th>Status</th><th></th></tr></thead>
-          <tbody>{active.length === 0 ? <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>No active officers yet.</td></tr> : active.map(o => (
+          <thead><tr><th>Name</th><th>Badge</th><th>Area</th><th>Target</th><th>Contact</th><th>Status</th><th></th></tr></thead>
+          <tbody>{active.filter(o => smatch(q, o.name, o.badge, o.lga, o.email)).length === 0 ? <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>{active.length ? 'No officers match your search.' : 'No active officers yet.'}</td></tr> : active.filter(o => smatch(q, o.name, o.badge, o.lga, o.email)).map(o => (
             <tr key={o.id}>
               <td>{o.name}</td>
               <td className="mono">{o.badge || '\u2014'}</td>
               <td>{o.lga || '\u2014'}</td>
+              <td><input type="number" min="1" defaultValue={o.target || 20} aria-label={'Monthly target for ' + o.name} onBlur={e => { const v = Number(e.target.value) || 20; if (v !== (o.target || 20)) { store.updateOfficer(o.id, { target: v }).then(() => { toast('Target updated for ' + o.name + '.'); load() }) } }} style={{ width: 62, padding: '5px 7px', border: '1px solid var(--line)', borderRadius: 7, fontFamily: 'inherit', fontSize: 13 }} /></td>
               <td className="muted">{o.email}</td>
               <td><span className="badge" style={o.status === 'Active' ? { background: '#e7f4ec', color: '#0a6b39' } : { background: '#fdeaea', color: '#b3261e' }}>{o.status}</span></td>
               <td>{o.status === 'Active' ? <button className="btn xs danger" onClick={() => setStatus(o, 'Suspended')}>Suspend</button> : o.status === 'Suspended' ? <button className="btn xs" onClick={() => setStatus(o, 'Active')}>Reactivate</button> : null}</td>
@@ -1998,9 +2239,35 @@ function SanctionApprovals({ agency }) {
         <div className="ord" key={r.id || i}>
           <div className="top"><div><b>{r.subject}</b> <span className="muted" style={{ fontSize: 12 }}>· {r.sanction} · recommended by {r.officer}</span></div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Recommended</span></div>
           {r.note && <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>{r.note}</div>}
+          {Array.isArray(r.photos) && r.photos.length > 0 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>{r.photos.map((src, k) => <img key={k} src={src} alt="Inspection evidence" style={{ width: 68, height: 68, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />)}</div>}
           <div className="row-between" style={{ marginTop: 10 }}><button className="btn sm" onClick={() => decide(r, false)}>Decline</button><button className="btn sm danger" onClick={() => decide(r, true)}>Approve and apply</button></div>
         </div>
       ))}
+    </div>
+  )
+}
+
+function OfficerProgress({ session }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => { store.listInspections(session.agency, session.email).then(setRows).catch(() => setRows([])) /* eslint-disable-next-line */ }, [])
+  if (!rows) return null
+  const target = Number(session.target) || 20
+  const now = new Date()
+  const thisMonth = rows.filter(r => { const d = new Date(r.ts); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
+  const done = thisMonth.filter(r => r.kind === 'inspection').length
+  const pct = Math.min(100, Math.round((done / target) * 100))
+  const met = done >= target
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row-between" style={{ alignItems: 'baseline' }}>
+        <div>
+          <div className="kicker" style={{ color: 'var(--accent, var(--green))' }}>Your target this month</div>
+          <div style={{ fontFamily: 'Lora,serif', fontSize: 20 }}>{done} of {target} inspections</div>
+        </div>
+        <span className="badge" style={met ? { background: '#e7f4ec', color: '#0a6b39' } : { background: '#fdf1dd', color: '#9a6200' }}>{met ? 'Target met' : (target - done) + ' to go'}</span>
+      </div>
+      <div className="bartrack" style={{ marginTop: 12, height: 12 }}><span className="barfill" style={{ width: pct + '%', background: met ? 'var(--green)' : 'var(--gold)' }} /></div>
+      <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{thisMonth.filter(r => r.kind === 'verify').length} certificate checks and {thisMonth.filter(r => r.kind === 'water').length} water samples also logged this month.</div>
     </div>
   )
 }
@@ -2019,6 +2286,7 @@ function OfficerModule({ session, tab }) {
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{session.agency} field officer</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}{session.badge ? ' · ' + session.badge : ''}{session.lga ? ' · ' + session.lga : ''}</span></div>
+      {(tab === 'field' || tab === 'activity') && <OfficerProgress session={session} />}
       {tab === 'field' && <OfficerField session={session} />}
       {tab === 'inspect' && <OfficerInspect session={session} />}
       {tab === 'water' && <OfficerWater session={session} />}
@@ -2066,28 +2334,45 @@ function OfficerInspect({ session }) {
   const [outcome, setOutcome] = useState('Compliant')
   const [sanction, setSanction] = useState('')
   const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function addPhotos(files) {
+    const list = Array.from(files || []).slice(0, 4 - photos.length)
+    for (const f of list) {
+      try { const d = await compressImage(f, 220); setPhotos(p => (p.length >= 4 ? p : [...p, d])) }
+      catch (e) { toast('Could not read that photograph.', 'err') }
+    }
+  }
   const lab = session.agency === 'HEFAMAA'
   useEffect(() => { load() /* eslint-disable-next-line */ }, [])
   async function load() { setTargets(lab ? labsView() : await store.listEstablishments()) }
   async function submit(tgt) {
     const name = tgt.name
-    await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'inspection', subject: name, outcome, note })
-    if (sanction) {
-      if (SANCTION_SEVERE.includes(sanction)) {
-        await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'sanction', subject: name, sanction, sanctionStatus: 'Recommended', note, targetId: tgt.id })
-        toast(sanction + ' recommended, sent to your supervisor for approval.', 'warn')
-      } else {
-        if (!lab) await store.updateEstablishment(tgt.id, { sanction, appeal: null })
-        await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'sanction', subject: name, sanction, sanctionStatus: 'Applied', targetId: tgt.id })
-        toast(sanction + ' applied.', 'warn')
-      }
-    } else { toast('Inspection recorded for ' + name + '.') }
-    setOpen(null); setOutcome('Compliant'); setSanction(''); setNote(''); load()
+    setBusy(true)
+    const pics = photos.filter(Boolean)
+    try {
+      await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'inspection', subject: name, outcome, note, photos: pics })
+      if (sanction) {
+        if (SANCTION_SEVERE.includes(sanction)) {
+          await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'sanction', subject: name, sanction, sanctionStatus: 'Recommended', note, targetId: tgt.id, photos: pics })
+          toast(sanction + ' recommended, sent to your supervisor for approval.', 'warn')
+        } else {
+          if (!lab) await store.updateEstablishment(tgt.id, { sanction, appeal: null })
+          await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'sanction', subject: name, sanction, sanctionStatus: 'Applied', targetId: tgt.id, photos: pics })
+          toast(sanction + ' applied.', 'warn')
+        }
+      } else { toast('Inspection recorded for ' + name + '.') }
+      setOpen(null); setOutcome('Compliant'); setSanction(''); setNote(''); setPhotos([]); load()
+    } catch (e) { toast('Could not save the inspection: ' + (e.message || 'try again'), 'err') }
+    setBusy(false)
   }
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>Record an inspection of {lab ? 'a laboratory' : 'an establishment'}. A warning applies immediately; a fine, closure or licence action is sent to your supervisor for approval.</div>
-      {targets.map(tgt => (
+      <SearchBar value={q} onChange={setQ} placeholder={lab ? 'Search laboratories...' : 'Search establishments by name or LGA...'} />
+      {targets.filter(x => smatch(q, x.name, x.lga || x.area, x.compliance)).length === 0 && <div className="placeholder">No {lab ? 'laboratories' : 'establishments'} match your search.</div>}
+      {targets.filter(x => smatch(q, x.name, x.lga || x.area, x.compliance)).map(tgt => (
         <div className="ord" key={tgt.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{tgt.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{(tgt.lga || tgt.area || '')}{tgt.compliance ? ' · ' + tgt.compliance : ''}{tgt.sanction ? ' · ' + tgt.sanction : ''}</div></div>{open !== tgt.id && <button className="btn sm" onClick={() => setOpen(tgt.id)}>Inspect</button>}</div>
           {open === tgt.id && (
@@ -2095,7 +2380,22 @@ function OfficerInspect({ session }) {
               <div className="field"><label>Outcome</label><select value={outcome} onChange={e => setOutcome(e.target.value)}><option>Compliant</option><option>Minor issues</option><option>Major issues</option></select></div>
               <div className="field"><label>Sanction (optional)</label><select value={sanction} onChange={e => setSanction(e.target.value)}><option value="">None</option>{SANCTION_LADDER.map(x => <option key={x} value={x}>{x}{SANCTION_SEVERE.includes(x) ? ' (needs approval)' : ''}</option>)}</select></div>
               <div className="field"><label>Note</label><textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="What did you observe?" /></div>
-              <div className="row-between"><button className="btn ghost sm" onClick={() => setOpen(null)}>Cancel</button><button className="btn p sm" onClick={() => submit(tgt)}>Submit inspection</button></div>
+              <div className="field">
+                <label>Inspection photographs (up to 4)</label>
+                <input type="file" accept="image/*" capture="environment" multiple onChange={e => { addPhotos(e.target.files); e.target.value = '' }} />
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Attach evidence from the site. Photographs are stored on the inspection record and visible to your supervisor.</div>
+                {photos.filter(Boolean).length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    {photos.filter(Boolean).map((src, i) => (
+                      <div key={i} style={{ position: 'relative' }}>
+                        <img src={src} alt={'Inspection photo ' + (i + 1)} style={{ width: 74, height: 74, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)', display: 'block' }} />
+                        <button onClick={() => setPhotos(p => p.filter((_, j) => j !== i))} aria-label="Remove photo" style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: '1px solid var(--line)', background: '#fff', cursor: 'pointer', lineHeight: 1, fontSize: 12 }}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="row-between"><button className="btn ghost sm" onClick={() => { setOpen(null); setPhotos([]) }}>Cancel</button><button className="btn p sm" onClick={() => submit(tgt)} disabled={busy}>{busy ? 'Saving...' : 'Submit inspection'}</button></div>
             </div>
           )}
         </div>
@@ -2141,6 +2441,7 @@ function OfficerActivity({ session }) {
         <div className="ord" key={r.id || i}>
           <div className="top"><div><b>{r.subject}</b> <span className="muted" style={{ fontSize: 12 }}>· {r.kind}{r.outcome ? ' · ' + r.outcome : ''}{r.sanction ? ' · ' + r.sanction : ''}</span></div><span className="muted" style={{ fontSize: 12 }}>{r.ts ? new Date(r.ts).toLocaleString('en-GB') : ''}</span></div>
           {r.note && <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>{r.note}</div>}
+          {Array.isArray(r.photos) && r.photos.length > 0 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>{r.photos.map((src, k) => <img key={k} src={src} alt="" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />)}</div>}
           {r.sanctionStatus && <span className="badge" style={{ marginTop: 8, background: (r.sanctionStatus === 'Applied' || r.sanctionStatus === 'Approved') ? '#e7f4ec' : '#fdf1dd', color: (r.sanctionStatus === 'Applied' || r.sanctionStatus === 'Approved') ? '#0a6b39' : '#9a6200' }}>{r.sanctionStatus}</span>}
         </div>
       ))}
@@ -2157,7 +2458,7 @@ function RegulatorModule({ session, tab }) {
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
       {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
-      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
+      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} /><AppealsList agency="LASEPA" /></>}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
@@ -2173,7 +2474,20 @@ function LSMoHReview({ session, guard, audit }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  async function refresh() { setLoading(true); const all = await store.listAllOrders(); setOrders(all.filter(o => o.status === 'Submitted')); setLoading(false) }
+  async function refresh() {
+    setLoading(true)
+    const all = await store.listAllOrders()
+    let queue = all.filter(o => o.status === 'Submitted')
+    // Live results are encrypted at rest, so fetch the decrypted panel for review.
+    // Without this the reviewer would see no result at all for each test.
+    if (SUPABASE_READY) {
+      queue = await Promise.all(queue.map(async o => {
+        if (o.results) return o
+        try { const r = await store.fn('decrypt-result', { orderId: o.id }); return { ...o, results: (r && r.results) || null } } catch (e) { return { ...o, results: null } }
+      }))
+    }
+    setOrders(queue); setLoading(false)
+  }
   useEffect(() => { refresh() }, [])
   async function approve(o) {
     if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); toast('Result approved, certificate issued.'); refresh(); return }
@@ -2205,11 +2519,12 @@ function LSMoHReview({ session, guard, audit }) {
         <div className="ord" key={o.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{o.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{o.safeplateId} · {o.lab}</div></div>
             <span className={'status ' + (slaExceeded(o) ? 'Flag' : 'Submitted')}>{slaExceeded(o) ? 'SLA exceeded, escalated' : 'Within 48h SLA'}</span></div>
+          {!o.results && <div className="err" style={{ marginTop: 10 }}>The laboratory result panel could not be read for this order. Do not approve it. Contact the laboratory and report this through Help and support.</div>}
           <table className="split-tbl" style={{ marginTop: 8 }}><tbody>{o.tests.map(t => (
-            <tr key={t}><td>{t}</td><td style={{ textAlign: 'right', fontWeight: 600, color: o.results && o.results[t] === 'refer' ? '#b3261e' : 'var(--green)' }}>{o.results && o.results[t] === 'refer' ? 'Refer' : 'Pass'}</td></tr>
+            <tr key={t}><td>{t}</td><td style={{ textAlign: 'right', fontWeight: 600, color: !o.results ? 'var(--muted)' : o.results[t] === 'refer' ? '#b3261e' : 'var(--green)' }}>{!o.results ? 'Not available' : o.results[t] === 'refer' ? 'Refer' : 'Pass'}</td></tr>
           ))}</tbody></table>
           <div className="row-between" style={{ marginTop: 12 }}>
-            <button className="btn p sm" onClick={() => guard('Approve results for ' + o.safeplateId, () => approve(o))}>Approve</button>
+            <button className="btn p sm" onClick={() => guard('Approve results for ' + o.safeplateId, () => approve(o))} disabled={!o.results} title={!o.results ? 'The result panel could not be read, so it cannot be approved' : ''}>Approve</button>
             <button className="btn sm danger" onClick={() => guard('Flag ' + o.safeplateId + ' for review', () => flag(o))}>Flag for review</button>
           </div>
         </div>
@@ -2269,8 +2584,19 @@ function CertAdmin({ guard, audit }) {
   )
 }
 
+function SearchBar({ value, onChange, placeholder, hint }) {
+  return (
+    <div className="audsearch" style={{ maxWidth: 460 }}>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'Search...'} aria-label={placeholder || 'Search'} />
+      {hint && <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>{hint}</div>}
+    </div>
+  )
+}
+const smatch = (q, ...fields) => { const ql = (q || '').trim().toLowerCase(); return !ql || fields.filter(Boolean).join(' ').toLowerCase().includes(ql) }
+
 function Enforcement({ guard, audit }) {
   const [ests, setEsts] = useState([])
+  const [q, setQ] = useState('')
   async function refresh() { setEsts(await store.listEstablishments()) }
   useEffect(() => { refresh() }, [])
   async function escalate(e) { const idx = e.sanction ? SANCTION_LADDER.indexOf(e.sanction) : -1; const next = SANCTION_LADDER[Math.min(idx + 1, SANCTION_LADDER.length - 1)]; await store.updateEstablishment(e.id, { sanction: next, appeal: null }); await audit('Sanction escalated to ' + next, e.name); refresh() }
@@ -2278,7 +2604,9 @@ function Enforcement({ guard, audit }) {
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>Enforcement is an escalating ladder with an appeals pathway. The aim is compliance as the outcome, not fines as the output.</div>
-      {ests.map(e => (
+      <SearchBar value={q} onChange={setQ} placeholder="Search facilities by name, LGA, compliance or sanction..." />
+      {ests.filter(e => smatch(q, e.name, e.lga, e.compliance, e.sanction)).length === 0 && <div className="placeholder">No facilities match your search.</div>}
+      {ests.filter(e => smatch(q, e.name, e.lga, e.compliance, e.sanction)).map(e => (
         <div className="ord" key={e.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.lga} · {e.compliance}</div></div>{e.appeal && <span className="status Sample">Appeal {e.appeal}</span>}</div>
           <div className="ladder">{SANCTION_LADDER.map(r => <span key={r} className={'rung ' + (e.sanction === r ? 'on' : '')}>{r}</span>)}</div>
@@ -2291,12 +2619,15 @@ function Enforcement({ guard, audit }) {
 
 function Accreditation({ guard, audit }) {
   const [labs, setLabs] = useState(labsView())
+  const [q, setQ] = useState('')
   async function toggle(l) { await store.setLabAccredited(l.id, !l.accredited); await audit((l.accredited ? 'Accreditation suspended for ' : 'Accreditation granted for ') + l.name, l.name); setLabs(labsView()) }
   async function qa(l) { await audit('QA audit recorded', l.name) }
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>HEFAMAA accredits laboratories and records QA audits. Suspending accreditation removes a lab from the food handler booking list immediately.</div>
-      {labs.map(l => (
+      <SearchBar value={q} onChange={setQ} placeholder="Search laboratories by name, area or accreditation number..." />
+      {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).length === 0 && <div className="placeholder">No laboratories match your search.</div>}
+      {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).map(l => (
         <div className="ord" key={l.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{l.area} · {l.accNo || 'no accreditation number'}</div></div><span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span></div>
           <div className="row-between" style={{ marginTop: 12 }}>
@@ -2406,6 +2737,7 @@ function SterlingModule({ session, tab }) {
   const { guard, modal } = useGuard()
   const [escrow, setEscrow] = useState([])
   const [releases, setReleases] = useState([])
+  const [q, setQ] = useState('')
   async function refresh() { setEscrow(await store.listEscrow()); setReleases(await store.listReleases()) }
   useEffect(() => { refresh() }, [])
 
@@ -2438,13 +2770,15 @@ function SterlingModule({ session, tab }) {
       <div className="tiles">{tiles.map(t => <div className="tile" key={t.k}><div className="v">{t.v}</div><div className="k">{t.k}</div></div>)}</div>
       <div className="note" style={{ marginBottom: 18 }}>Sterling Bank never sees test results or medical data. Releases happen only after Ministry approval, and disburse the full waterfall atomically, all legs or none.</div>
       <Insights session={session} />
-
-      {tab === 'ledger' && (
+      <h3 className="serif" style={{ fontSize: 18, margin: '18px 0 4px' }}>{tab === 'ledger' ? 'Escrow ledger' : tab === 'releases' ? 'Release instructions' : tab === 'fund' ? 'State regulatory fund' : 'Reconciliation'}</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>{tab === 'ledger' ? 'Every escrow transaction, food handler and water facility, held or released.' : tab === 'releases' ? 'Ministry-approved instructions awaiting disbursement, and recent releases.' : tab === 'fund' ? 'Oversight fund remitted to the State on each released transaction.' : 'End-of-day totals reconciling held, released and remitted balances.'}</p>
+      {tab === 'ledger' && (<>
+        <SearchBar value={q} onChange={setQ} placeholder="Search by ID, name, laboratory, type or status..." />
         <div style={{ overflowX: 'auto' }}><table className="audit-tbl">
           <thead><tr><th>SAFEPLATE ID</th><th>Name</th><th>Laboratory</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead>
-          <tbody>{escrow.map(e => (<tr key={e.safeplateId}><td>{e.safeplateId}</td><td>{e.name}</td><td>{e.lab}</td><td>{e.type === 'WATER' ? 'Water' : 'Food handler'}</td><td>{naira(e.amount)}</td><td><span className={'status ' + e.status}>{e.status}</span></td></tr>))}</tbody>
+          <tbody>{escrow.filter(e => smatch(q, e.safeplateId, e.name, e.lab, e.type === 'WATER' ? 'water' : 'food handler', e.status)).map(e => (<tr key={e.safeplateId}><td className="mono">{e.safeplateId}</td><td>{e.name}</td><td>{e.lab}</td><td>{e.type === 'WATER' ? 'Water' : 'Food handler'}</td><td>{naira(e.amount)}</td><td><span className={'status ' + e.status}>{e.status}</span></td></tr>))}</tbody>
         </table></div>
-      )}
+      </>)}
 
       {tab === 'releases' && (
         <div>
@@ -2530,15 +2864,28 @@ function EmployerTeam({ session }) {
   async function bulkPay() {
     setBusy(true); setMsg('')
     const pending = biz.staff.filter(x => x.status === 'Not registered')
-    for (const x of pending) {
-      const id = makeSafeplateId()
-      await store.createOrder({ id: 'ORD-' + id.replace('SP-LG-', ''), safeplateId: id, handlerName: x.name, phone: x.phone, lab: 'Lancet Ikeja', tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
-      await store.createEscrow({ safeplateId: id, name: x.name, lab: 'Lancet Ikeja', amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
-      x.safeplateId = id; x.status = 'Pending results'
+    if (!pending.length) { setMsg('No unregistered staff to enrol.'); setBusy(false); return }
+    try {
+      if (SUPABASE_READY) {
+        if (PAYSTACK_READY) { await payWithPaystack(session.email, pending.length * FEE, 'EMP-' + Date.now()) }
+        const res = await store.fn('bulk-enroll', { staff: pending.map(x => ({ name: x.name, phone: x.phone })), lab: 'Lancet Ikeja', employer: session.email })
+        const created = (res && res.created) || []
+        created.forEach(c => { const m = biz.staff.find(x => x.status === 'Not registered' && x.name === c.name && x.phone === c.phone); if (m) { m.safeplateId = c.safeplateId; m.status = 'Pending results' } })
+      } else {
+        for (const x of pending) {
+          const id = makeSafeplateId()
+          await store.createOrder({ id: 'ORD-' + id.replace('SP-LG-', ''), safeplateId: id, handlerName: x.name, phone: x.phone, lab: 'Lancet Ikeja', tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
+          await store.createEscrow({ safeplateId: id, name: x.name, lab: 'Lancet Ikeja', amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
+          x.safeplateId = id; x.status = 'Pending results'
+        }
+      }
+      const b = { ...biz }; await store.saveBusiness(session.email, b); setBiz(b)
+      setMsg('Enrolled and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
+      toast('Enrolled ' + pending.length + ' staff into testing.')
+    } catch (e) {
+      setMsg('Could not complete enrolment: ' + (e.message || 'please try again.'))
+      toast('Enrolment could not complete.', 'err')
     }
-    const b = { ...biz }; await store.saveBusiness(session.email, b); setBiz(b)
-    setMsg('Registered and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
-    toast('Enrolled ' + pending.length + ' staff into testing.')
     setBusy(false)
   }
   async function bulkAddCsv(file) {
@@ -3148,6 +3495,8 @@ export default function App() {
     return null
   }
 
+  useEffect(() => { try { window.scrollTo({ top: 0 }) } catch (e) { window.scrollTo(0, 0) } }, [tab, mode, workspace, session])
+
   useEffect(() => {
     const els = Array.from(document.querySelectorAll('.reveal:not(.in)'))
     if (!els.length) return
@@ -3160,6 +3509,7 @@ export default function App() {
     <>
       <Styles />
       <Toasts />
+      <HelpCentre />
       <GovBar />
       {session ? (
         <div className="applayout" style={{ ['--accent']: accentFor(eff) }}>

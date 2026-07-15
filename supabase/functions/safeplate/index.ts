@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
         if (fhRow?.email && resendKey) {
           await fetch('https://api.resend.com/emails', {
             method: 'POST', headers: { authorization: 'Bearer ' + resendKey, 'content-type': 'application/json' },
-            body: JSON.stringify({ from: 'SafePlate <onboarding@resend.dev>', to: fh.email, subject: 'Your SafePlate Certificate of Fitness (' + lsh + ')', html: 'Your Certificate of Fitness is issued. View, download or verify it here: <a href="' + appUrl + '/#/verify/' + order.safeplate_id + '">' + appUrl + '/#/verify/' + order.safeplate_id + '</a>' })
+            body: JSON.stringify({ from: 'SafePlate <onboarding@resend.dev>', to: fhRow.email, subject: 'Your SafePlate Certificate of Fitness (' + lsh + ')', html: 'Your Certificate of Fitness is issued. View, download or verify it here: <a href="' + appUrl + '/#/verify/' + order.safeplate_id + '">' + appUrl + '/#/verify/' + order.safeplate_id + '</a>' })
           })
         }
       } catch (_) { /* ignore email errors */ }
@@ -149,6 +149,40 @@ Deno.serve(async (req) => {
       await db.from('audit_log').insert({ actor: me.email, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: body.safeplateId })
       await db.from('notifications').insert({ audience: 'laboratory', title: 'Payment released', body: body.safeplateId })
       return json({ ok: true, status: 'RELEASED' })
+    }
+
+    // ---- Laboratory advances a sample through the pre-result stages ----
+    if (action === 'advance-order') {
+      if (me.role !== 'laboratory') return json({ error: 'Forbidden' }, 403)
+      const allowed = ['Sample Collected', 'Testing in Progress', 'No Show', 'Spoiled sample']
+      if (!allowed.includes(body.status)) return json({ error: 'Invalid status' }, 400)
+      const { data: order } = await db.from('test_orders').select('*').eq('id', body.orderId).single()
+      if (!order) return json({ error: 'Order not found' }, 404)
+      if (me.lab && order.lab !== me.lab) return json({ error: 'Not your order' }, 403)
+      await db.from('test_orders').update({ status: body.status }).eq('id', body.orderId)
+      await db.from('audit_log').insert({ actor: me.email, role: 'laboratory', action: 'Sample updated to ' + body.status, subject: order.safeplate_id })
+      return json({ ok: true, status: body.status })
+    }
+
+    // ---- Employer bulk-enrols staff (creates handlers, orders and held escrow) ----
+    if (action === 'bulk-enroll') {
+      if (me.role !== 'employer') return json({ error: 'Forbidden' }, 403)
+      const staff = Array.isArray(body.staff) ? body.staff : []
+      const lab = body.lab || 'Lancet Ikeja'
+      const tests = ['Hepatitis A', 'Hepatitis E', 'Stool Microscopy & Culture (MC)']
+      const year = new Date().getFullYear()
+      const created = []
+      for (let i = 0; i < staff.length; i++) {
+        const st = staff[i]
+        const id = 'SP-LG-' + year + String(Math.floor(100000 + Math.random() * 899999))
+        const oid = 'ORD-' + year + '-' + id.slice(-6) + '-' + i
+        await db.from('food_handlers').upsert({ safeplate_id: id, name: st.name, phone: st.phone, employer: body.employer || me.email, created_at: new Date().toISOString() }, { onConflict: 'safeplate_id' })
+        await db.from('test_orders').insert({ id: oid, safeplate_id: id, handler_name: st.name, phone: st.phone, lab, tests, status: 'Scheduled', created_at: new Date().toISOString() })
+        await db.from('escrow').insert({ safeplate_id: id, name: st.name, lab, amount: FEE, type: 'FOOD', status: 'HELD', ts: new Date().toISOString() })
+        created.push({ name: st.name, phone: st.phone, safeplateId: id })
+      }
+      await db.from('audit_log').insert({ actor: me.email, role: 'employer', action: 'Bulk-enrolled ' + created.length + ' staff into testing', subject: body.employer || me.email })
+      return json({ ok: true, created })
     }
 
     // ---- LSMoH revokes a certificate ----

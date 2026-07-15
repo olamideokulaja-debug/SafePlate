@@ -241,3 +241,39 @@ create policy est_officer_select on establishments for select to authenticated u
 create policy est_officer_update on establishments for update to authenticated using (is_officer()) with check (is_officer());
 drop policy if exists water_officer_insert on water_tests;
 create policy water_officer_insert on water_tests for insert to authenticated with check (is_officer());
+
+-- Badge numbers must be unique (a badge cannot be issued or reused twice).
+-- Resolve any duplicate badge numbers BEFORE enforcing uniqueness, otherwise this
+-- script stops here and the blocks below never run. The earliest officer keeps the
+-- badge; later duplicates are cleared so an administrator can reassign a fresh one.
+with ranked as (
+  select id, row_number() over (partition by badge order by created_at nulls last, id) as rn
+  from officers
+  where badge is not null
+)
+update officers o
+   set badge = null
+  from ranked r
+ where o.id = r.id
+   and r.rn > 1;
+
+create unique index if not exists officers_badge_uk on officers (badge) where badge is not null;
+
+-- Inspection photographs, officer workload targets, and customer-care tickets.
+alter table inspections add column if not exists photos jsonb;
+alter table officers add column if not exists target int default 20;
+
+create table if not exists support_tickets (
+  id bigint generated always as identity primary key,
+  reporter text, role text, category text, subject text, body text,
+  status text default 'Open', created_at timestamptz default now()
+);
+alter table support_tickets enable row level security;
+drop policy if exists tickets_insert on support_tickets;
+drop policy if exists tickets_select on support_tickets;
+drop policy if exists tickets_update on support_tickets;
+create policy tickets_insert on support_tickets for insert to authenticated with check (true);
+create policy tickets_select on support_tickets for select to authenticated
+  using (is_regulator() or reporter = auth.jwt() ->> 'email');
+create policy tickets_update on support_tickets for update to authenticated
+  using (is_regulator()) with check (is_regulator());
