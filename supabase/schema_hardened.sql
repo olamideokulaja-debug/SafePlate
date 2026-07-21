@@ -497,3 +497,8 @@ drop policy if exists ben_update on beneficiaries;
 create policy ben_read on beneficiaries for select to authenticated using (auth_role() = 'sterling' or is_regulator());
 create policy ben_insert on beneficiaries for insert to authenticated with check (auth_role() = 'sterling' or is_regulator());
 create policy ben_update on beneficiaries for update to authenticated using (auth_role() = 'sterling' or is_regulator()) with check (auth_role() = 'sterling' or is_regulator());
+
+-- Laboratory bank details (beneficiary of the disbursement waterfall).
+alter table laboratories add column if not exists bank_name text;
+alter table laboratories add column if not exists account_number text;
+alter table laboratories add column if not exists account_name text;

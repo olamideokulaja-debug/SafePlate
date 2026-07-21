@@ -536,7 +536,7 @@ const store = {
   },
   async registerLab(lab) {
     const id = lab.id || ('lab-' + Date.now())
-    const rec = { id, name: lab.name, area: lab.lga || lab.area || '', accredited: false, contactPerson: lab.contactPerson || '', phone: lab.phone || '', address: lab.address || '', lga: lab.lga || '', status: 'Pending' }
+    const rec = { id, name: lab.name, area: lab.lga || lab.area || '', accredited: false, contactPerson: lab.contactPerson || '', phone: lab.phone || '', address: lab.address || '', lga: lab.lga || '', bankName: lab.bankName || '', accountNumber: lab.accountNumber || '', accountName: lab.accountName || '', status: 'Pending' }
     if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').upsert(toSnake(rec), { onConflict: 'id' }); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.regLabs = db.regLabs || {}; db.regLabs[id] = { ...rec, turnaround: '48 hours', mobile: false, accNo: null }; DEMO.write(db); return rec
   },
@@ -664,7 +664,11 @@ const store = {
     // All privileged actions go to one Edge Function ("safeplate"), routed by action.
     const res = await fetch(SUPABASE_URL + '/functions/v1/safeplate', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY }, body: JSON.stringify({ action: name, ...(body || {}) }) })
     const out = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(out.error || 'Action failed')
+    if (!res.ok) {
+      if (res.status === 403) throw new Error('Your session was not recognised for this action. Sign out and sign in again with the correct role, and make sure the latest version is deployed.')
+      if (res.status === 401) throw new Error('Your session has expired. Please sign in again.')
+      throw new Error(out.error || 'Action failed')
+    }
     return out
   }
 }
@@ -755,9 +759,8 @@ function generateEnforcementLetter(est, session) {
   const subj = 'RE: ENFORCEMENT NOTICE, ' + String(est.sanction || 'Compliance action').toUpperCase()
   doc.text(subj, M, y); y += 22
   doc.setFont('times', 'normal'); doc.setFontSize(10.8)
-  const compliance = est.compliance || 'below the required standard'
   const body = [
-    'Following inspection and review of your establishment under the SafePlate food and water safety programme, your current compliance status is recorded as "' + compliance + '".',
+    'Following inspection and review of your establishment under the SafePlate food and water safety programme, deficiencies were identified that place your establishment in breach of the required food and water safety standards.',
     '',
     'Accordingly, the Agency hereby issues the following enforcement action: ' + (est.sanction || 'a formal warning') + '. This action is taken pursuant to the NAFDAC Food Hygiene Regulations 2019 and applicable Lagos State food and public-health law.',
     '',
@@ -1835,7 +1838,7 @@ function AuthFlow({ onDone, onBack }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
-  const [labForm, setLabForm] = useState({ labName: '', contactPerson: '', phone: '', address: '', lga: '' })
+  const [labForm, setLabForm] = useState({ labName: '', contactPerson: '', phone: '', address: '', lga: '', bankName: '', accountNumber: '', accountName: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [otpStage, setOtpStage] = useState(false)
@@ -1853,6 +1856,7 @@ function AuthFlow({ onDone, onBack }) {
     setErr(''); setBusy(true)
     try {
       if (mode === 'signup' && role.id === 'laboratory' && !labForm.labName.trim()) { setErr('Please enter your laboratory name.'); setBusy(false); return }
+      if (mode === 'signup' && role.id === 'laboratory' && labForm.accountNumber && !/^\d{10}$/.test(labForm.accountNumber.replace(/\s+/g, ''))) { setErr('Bank account number must be exactly 10 digits.'); setBusy(false); return }
       const meta = { role: role.id, agency: ['regulator', 'officer'].includes(role.id) ? agency : null, name: name || email.split('@')[0], title: roleTitle(role.id, agency) }
       const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password, role.id, meta.agency, meta.name)
       let finalUser = { ...user, email: user.email || email, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
@@ -1862,7 +1866,7 @@ function AuthFlow({ onDone, onBack }) {
         finalUser = { ...finalUser, status: off.status, badge: off.badge, lga: off.lga, target: off.target, agency: off.agency || finalUser.agency }
       }
       if (finalUser.role === 'laboratory' && mode === 'signup' && labForm.labName.trim()) {
-        try { await store.registerLab({ name: labForm.labName.trim(), contactPerson: labForm.contactPerson.trim(), phone: labForm.phone.trim(), address: labForm.address.trim(), lga: labForm.lga }) } catch (e) { /* lab can still sign in; HEFAMAA can add later */ }
+        try { await store.registerLab({ name: labForm.labName.trim(), contactPerson: labForm.contactPerson.trim(), phone: labForm.phone.trim(), address: labForm.address.trim(), lga: labForm.lga, bankName: labForm.bankName.trim(), accountNumber: labForm.accountNumber.trim(), accountName: labForm.accountName.trim() }) } catch (e) { /* lab can still sign in; HEFAMAA can add later */ }
       }
       if (SUPABASE_READY && ['regulator', 'sterling'].includes(finalUser.role)) {
         await store.fn('send-otp', {}); setPendingUser(finalUser); setOtpStage(true); setBusy(false); return
@@ -1922,7 +1926,11 @@ function AuthFlow({ onDone, onBack }) {
             <div className="field"><label>Phone</label><input value={labForm.phone} onChange={e => setLabForm({ ...labForm, phone: e.target.value })} placeholder="080..." /></div>
             <div className="field"><label>Address</label><input value={labForm.address} onChange={e => setLabForm({ ...labForm, address: e.target.value })} placeholder="Street and area" /></div>
             <div className="field"><label>LGA</label><select value={labForm.lga} onChange={e => setLabForm({ ...labForm, lga: e.target.value })}><option value="">Select LGA</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
-            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Your laboratory is submitted to HEFAMAA for accreditation. You can sign in immediately; you can receive samples once approved.</p>
+            <div className="kicker" style={{ color: 'var(--green)', margin: '4px 0 8px' }}>Bank details for disbursement</div>
+            <div className="field"><label>Bank</label><input value={labForm.bankName} onChange={e => setLabForm({ ...labForm, bankName: e.target.value })} placeholder="e.g. Sterling Bank" /></div>
+            <div className="field"><label>Account number</label><input value={labForm.accountNumber} onChange={e => setLabForm({ ...labForm, accountNumber: e.target.value })} placeholder="10-digit NUBAN" inputMode="numeric" /></div>
+            <div className="field"><label>Account name</label><input value={labForm.accountName} onChange={e => setLabForm({ ...labForm, accountName: e.target.value })} placeholder="Registered account name" /></div>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Your laboratory is submitted to HEFAMAA for accreditation. As a waterfall beneficiary your bank details are held securely and used to disburse your share when escrow is released. You can sign in immediately; you can receive samples once approved.</p>
           </div>
         )}
         {mode === 'signup' && <div className="field"><label>{role.id === 'laboratory' ? 'Your full name' : 'Full name'}</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></div>}
@@ -3067,12 +3075,14 @@ function SterlingModule({ session, tab }) {
   ]
 
   async function release(e) {
-    if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }); toast('Escrow released, full waterfall disbursed.'); refresh(); return }
-    await store.releaseEscrow(e.safeplateId, session.name)
-    await store.appendAudit({ actor: session.name, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: e.safeplateId })
-    await store.notify('laboratory', 'Payment released', e.safeplateId + ', ' + naira(e.amount))
-    toast('Escrow released, full waterfall disbursed.')
-    refresh()
+    try {
+      if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }); toast('Escrow released, full waterfall disbursed.'); refresh(); return }
+      await store.releaseEscrow(e.safeplateId, session.name)
+      await store.appendAudit({ actor: session.name, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: e.safeplateId })
+      await store.notify('laboratory', 'Payment released', e.safeplateId + ', ' + naira(e.amount))
+      toast('Escrow released, full waterfall disbursed.')
+      refresh()
+    } catch (err) { toast('Could not release: ' + (err.message || 'please try again.'), 'err') }
   }
 
   async function releaseAll() {
@@ -3673,6 +3683,12 @@ function Insights({ session }) {
     if (role === 'employer') { const b = await store.getBusiness(session.email); const staff = (b && b.staff) || []; const by = {}; staff.forEach(x => by[x.status] = (by[x.status] || 0) + 1); return { v: 'employer', by, total: staff.length } }
     if (role === 'regulator' && agency === 'LASEPA') { const w = await store.listAllWaterTests(); const by = {}; w.forEach(x => by[x.status || 'Pending'] = (by[x.status || 'Pending'] || 0) + 1); return { v: 'lasepa', by, total: w.length } }
     if (role === 'regulator' && agency === 'HEFAMAA') { const labs = labsView(); const acc = labs.filter(l => l.accredited).length; return { v: 'hefamaa', acc, non: labs.length - acc, total: labs.length } }
+    if (role === 'regulator' && agency === 'LSMoH') {
+      const orders = await store.listAllOrders(); const certs = await store.listAllCertificates()
+      const ordersBy = {}; orders.forEach(o => { ordersBy[o.status || 'Scheduled'] = (ordersBy[o.status || 'Scheduled'] || 0) + 1 })
+      const certBy = {}; certs.forEach(c => { const st = c.status || 'VALID'; certBy[st] = (certBy[st] || 0) + 1 })
+      return { v: 'lsmoh', ordersBy, certBy, totalOrders: orders.length, totalCerts: certs.length }
+    }
     if (role === 'food_handler') return { v: 'none' }
     return { v: 'none' }
   }
@@ -3686,6 +3702,12 @@ function Insights({ session }) {
       <ChartCard title="Transactions by type"><Bars data={[{ label: 'Food handler', value: d.food, color: CHART[0] }, { label: 'Water facility', value: d.water, color: CHART[3] }]} /></ChartCard>
     </div>
   )
+  if (d.v === 'lsmoh') { const ok = Object.keys(d.ordersBy), ck = Object.keys(d.certBy); return (
+    <div className="chartgrid">
+      <ChartCard title="Certificates by status" hint="statewide"><Donut center={String(d.totalCerts)} sub="certificates" data={ck.length ? ck.map(x => ({ label: x, value: d.certBy[x], display: String(d.certBy[x]), color: x === 'VALID' ? CHART[0] : x === 'EXPIRED' ? CHART[1] : '#b3261e' })) : [{ label: 'None', value: 1, display: '0', color: CHART[6] }]} /></ChartCard>
+      <ChartCard title="Test orders by stage" hint="the review pipeline"><Bars data={ok.length ? ok.map(x => ({ label: x, value: d.ordersBy[x], color: statusColor(x) })) : [{ label: 'No orders', value: 0 }]} /></ChartCard>
+    </div>
+  ) }
   if (d.v === 'lab') { const k = Object.keys(d.by); return (
     <div className="chartgrid"><ChartCard title="Testing pipeline" hint="orders by status, all accredited labs"><Bars data={k.length ? k.map(x => ({ label: x, value: d.by[x], color: statusColor(x) })) : [{ label: 'No orders yet', value: 0 }]} /></ChartCard></div>
   )}
