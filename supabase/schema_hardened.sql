@@ -263,6 +263,7 @@ create policy fh_update on food_handlers for update to authenticated
 drop policy if exists to_select on test_orders;
 create policy to_select on test_orders for select to authenticated using (
   is_regulator()
+  or auth_role() = 'laboratory'
   or lab = auth_lab()
   or safeplate_id in (select safeplate_id from food_handlers where user_id = auth.uid())
 );
@@ -469,3 +470,13 @@ create policy tickets_select on support_tickets for select to authenticated
 drop policy if exists tickets_update on support_tickets;
 create policy tickets_update on support_tickets for update to authenticated
   using (is_regulator()) with check (is_regulator());
+
+-- Laboratory self-registration (name, contact, address) pending HEFAMAA approval.
+alter table laboratories add column if not exists contact_person text;
+alter table laboratories add column if not exists phone text;
+alter table laboratories add column if not exists address text;
+alter table laboratories add column if not exists lga text;
+alter table laboratories add column if not exists status text default 'Accredited';
+drop policy if exists lab_register on laboratories;
+create policy lab_register on laboratories for insert to authenticated
+  with check (auth_role() = 'laboratory' or is_regulator());

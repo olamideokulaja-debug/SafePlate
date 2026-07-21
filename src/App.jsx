@@ -511,7 +511,43 @@ const store = {
   },
   async setLabAccredited(id, val) {
     if (SUPABASE_READY) { await supabase.from('laboratories').update({ accredited: val }).eq('id', id) }
-    const db = DEMO.read(); db.labAccred = db.labAccred || {}; db.labAccred[id] = val; DEMO.write(db)
+    const db = DEMO.read(); db.labAccred = db.labAccred || {}; db.labAccred[id] = val
+    if (db.regLabs && db.regLabs[id]) db.regLabs[id].accredited = val
+    DEMO.write(db)
+  },
+  async registerLab(lab) {
+    const id = lab.id || ('lab-' + Date.now())
+    const rec = { id, name: lab.name, area: lab.lga || lab.area || '', accredited: false, contactPerson: lab.contactPerson || '', phone: lab.phone || '', address: lab.address || '', lga: lab.lga || '', status: 'Pending' }
+    if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').upsert(toSnake(rec), { onConflict: 'id' }); if (error) throw new Error(error.message); return rec }
+    const db = DEMO.read(); db.regLabs = db.regLabs || {}; db.regLabs[id] = { ...rec, turnaround: '48 hours', mobile: false, accNo: null }; DEMO.write(db); return rec
+  },
+  async listPendingLabs() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('laboratories').select('*').eq('status', 'Pending'); return camelList(data) }
+    const db = DEMO.read(); return Object.values(db.regLabs || {}).filter(l => l.status === 'Pending')
+  },
+  async approveLab(id) {
+    if (SUPABASE_READY) { await supabase.from('laboratories').update({ accredited: true, status: 'Accredited' }).eq('id', id); return }
+    const db = DEMO.read(); if (db.regLabs && db.regLabs[id]) { db.regLabs[id].accredited = true; db.regLabs[id].status = 'Accredited' } db.labAccred = db.labAccred || {}; db.labAccred[id] = true; DEMO.write(db)
+  },
+  async declineLab(id) {
+    if (SUPABASE_READY) { await supabase.from('laboratories').update({ status: 'Declined', accredited: false }).eq('id', id); return }
+    const db = DEMO.read(); if (db.regLabs && db.regLabs[id]) db.regLabs[id].status = 'Declined'; DEMO.write(db)
+  },
+  async accreditedLabList() {
+    if (SUPABASE_READY) {
+      const { data } = await supabase.from('laboratories').select('*').eq('accredited', true)
+      const dbLabs = camelList(data); const names = new Set(dbLabs.map(l => l.name))
+      return [...dbLabs.map(l => ({ ...l, accredited: true })), ...LABS.filter(l => l.accredited && !names.has(l.name))]
+    }
+    return labsView().filter(l => l.accredited)
+  },
+  async allLabs() {
+    if (SUPABASE_READY) {
+      const { data } = await supabase.from('laboratories').select('*')
+      const dbLabs = camelList(data); const names = new Set(dbLabs.map(l => l.name))
+      return [...dbLabs, ...LABS.filter(l => !names.has(l.name))]
+    }
+    return labsView()
   },
   async getBusiness(email) {
     if (SUPABASE_READY) { const { data } = await supabase.from('businesses').select('*').eq('owner_email', email).limit(1); const b = data && data[0]; return b ? toCamel(b) : null }
@@ -730,7 +766,9 @@ const LABS = [
 
 function labsView() {
   const db = DEMO.read(); const ov = db.labAccred || {}
-  return LABS.map(l => (l.id in ov ? { ...l, accredited: ov[l.id] } : l))
+  const base = LABS.map(l => (l.id in ov ? { ...l, accredited: ov[l.id] } : l))
+  const reg = Object.values(db.regLabs || {}).filter(l => l.status !== 'Declined')
+  return [...base, ...reg]
 }
 
 const FEE = 15000
@@ -1713,6 +1751,7 @@ function AuthFlow({ onDone, onBack }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [labForm, setLabForm] = useState({ labName: '', contactPerson: '', phone: '', address: '', lga: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [otpStage, setOtpStage] = useState(false)
@@ -1729,6 +1768,7 @@ function AuthFlow({ onDone, onBack }) {
   async function submit() {
     setErr(''); setBusy(true)
     try {
+      if (mode === 'signup' && role.id === 'laboratory' && !labForm.labName.trim()) { setErr('Please enter your laboratory name.'); setBusy(false); return }
       const meta = { role: role.id, agency: ['regulator', 'officer'].includes(role.id) ? agency : null, name: name || email.split('@')[0], title: roleTitle(role.id, agency) }
       const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password, role.id, meta.agency, meta.name)
       let finalUser = { ...user, email: user.email || email, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
@@ -1736,6 +1776,9 @@ function AuthFlow({ onDone, onBack }) {
         let off = await store.getOfficerByEmail(finalUser.email)
         if (!off) { off = await store.addOfficer({ name: finalUser.name, email: finalUser.email, agency: finalUser.agency, status: 'Pending' }) }
         finalUser = { ...finalUser, status: off.status, badge: off.badge, lga: off.lga, target: off.target, agency: off.agency || finalUser.agency }
+      }
+      if (finalUser.role === 'laboratory' && mode === 'signup' && labForm.labName.trim()) {
+        try { await store.registerLab({ name: labForm.labName.trim(), contactPerson: labForm.contactPerson.trim(), phone: labForm.phone.trim(), address: labForm.address.trim(), lga: labForm.lga }) } catch (e) { /* lab can still sign in; HEFAMAA can add later */ }
       }
       if (SUPABASE_READY && ['regulator', 'sterling'].includes(finalUser.role)) {
         await store.fn('send-otp', {}); setPendingUser(finalUser); setOtpStage(true); setBusy(false); return
@@ -1787,7 +1830,18 @@ function AuthFlow({ onDone, onBack }) {
         {['regulator', 'officer'].includes(role.id) && (
           <div className="field"><label>Agency</label><select value={agency} onChange={e => setAgency(e.target.value)}>{AGENCIES.map(a => <option key={a}>{a}</option>)}</select></div>
         )}
-        {mode === 'signup' && <div className="field"><label>Full name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></div>}
+        {mode === 'signup' && role.id === 'laboratory' && (
+          <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', marginBottom: 12, background: '#fafcfb' }}>
+            <div className="kicker" style={{ color: 'var(--green)', marginBottom: 8 }}>Laboratory registration</div>
+            <div className="field"><label>Laboratory name</label><input value={labForm.labName} onChange={e => setLabForm({ ...labForm, labName: e.target.value })} placeholder="e.g. Lancet Ikeja" /></div>
+            <div className="field"><label>Contact person</label><input value={labForm.contactPerson} onChange={e => setLabForm({ ...labForm, contactPerson: e.target.value })} placeholder="Full name of lab manager" /></div>
+            <div className="field"><label>Phone</label><input value={labForm.phone} onChange={e => setLabForm({ ...labForm, phone: e.target.value })} placeholder="080..." /></div>
+            <div className="field"><label>Address</label><input value={labForm.address} onChange={e => setLabForm({ ...labForm, address: e.target.value })} placeholder="Street and area" /></div>
+            <div className="field"><label>LGA</label><select value={labForm.lga} onChange={e => setLabForm({ ...labForm, lga: e.target.value })}><option value="">Select LGA</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Your laboratory is submitted to HEFAMAA for accreditation. You can sign in immediately; you can receive samples once approved.</p>
+          </div>
+        )}
+        {mode === 'signup' && <div className="field"><label>{role.id === 'laboratory' ? 'Your full name' : 'Full name'}</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></div>}
         <div className="field"><label>Email or phone</label><input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></div>
         <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></div>
         {needs2fa && <div className="note" style={{ marginBottom: 14 }}>This portal requires 2FA. In the connected build an OTP is sent to your registered phone on every sign-in and approval.</div>}
@@ -1910,6 +1964,8 @@ function FoodHandlerModule({ session }) {
   const [checking, setChecking] = useState(true)
   const [mine, setMine] = useState(null)
   const [showWizard, setShowWizard] = useState(false)
+  const [labs, setLabs] = useState(() => labsView())
+  useEffect(() => { store.allLabs().then(setLabs).catch(() => {}) }, [])
   useEffect(() => { (async () => { try { const hh = await store.getMyHandler(session); if (hh) { const cert = await store.verifyCertificate(hh.safeplateId); const order = await store.getOrderFor(hh.safeplateId); setMine({ h: hh, cert, order }) } } catch (e) { /* ignore */ } setChecking(false) })() /* eslint-disable-next-line */ }, [])
 
   async function register() {
@@ -1991,7 +2047,7 @@ function FoodHandlerModule({ session }) {
         <div className="card">
           <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s3')}</h3><span className="st">Step 3 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Accreditation is checked in real time. Unaccredited labs cannot take your order.</p>
-          {labsView().map(l => (
+          {labs.map(l => (
             <button key={l.id} className={'lab-row ' + (l.accredited ? '' : 'off')} onClick={() => chooseLab(l)}>
               <span><b style={{ fontFamily: 'Lora,serif' }}>{l.name}</b><div className="meta">{l.area} · results in {l.turnaround}{l.mobile ? ' · mobile collection' : ''}</div></span>
               <span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span>
@@ -2034,8 +2090,9 @@ function FoodHandlerModule({ session }) {
 /* ------------------------------------------------------------------ */
 
 function LaboratoryModule({ session }) {
-  const accreditedLabs = labsView().filter(l => l.accredited)
-  const [labName, setLabName] = useState(accreditedLabs[0].name)
+  const [accreditedLabs, setAccreditedLabs] = useState(() => labsView().filter(l => l.accredited))
+  useEffect(() => { store.accreditedLabList().then(list => { if (list && list.length) setAccreditedLabs(list) }).catch(() => {}) }, [])
+  const [labName, setLabName] = useState(() => { const a = labsView().filter(l => l.accredited); return a[0] ? a[0].name : '' })
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const lab = accreditedLabs.find(l => l.name === labName)
@@ -2467,7 +2524,7 @@ function RegulatorModule({ session, tab }) {
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
       {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
-      {tab === 'review' && <><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /><div style={{ marginTop: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div></>}
+      {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} /><AppealsList agency="LASEPA" /></>}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
@@ -2628,12 +2685,36 @@ function Enforcement({ guard, audit }) {
 
 function Accreditation({ guard, audit }) {
   const [labs, setLabs] = useState(labsView())
+  const [pending, setPending] = useState([])
   const [q, setQ] = useState('')
-  async function toggle(l) { await store.setLabAccredited(l.id, !l.accredited); await audit((l.accredited ? 'Accreditation suspended for ' : 'Accreditation granted for ') + l.name, l.name); setLabs(labsView()) }
+  async function refreshLabs() {
+    try { setLabs(await store.allLabs()) } catch (e) { setLabs(labsView()) }
+    try { setPending(await store.listPendingLabs()) } catch (e) { setPending([]) }
+  }
+  useEffect(() => { refreshLabs() /* eslint-disable-next-line */ }, [])
+  async function toggle(l) { await store.setLabAccredited(l.id, !l.accredited); await audit((l.accredited ? 'Accreditation suspended for ' : 'Accreditation granted for ') + l.name, l.name); refreshLabs() }
+  async function approveReg(l) { await store.approveLab(l.id); await audit('Laboratory accreditation approved for ' + l.name, l.name); toast(l.name + ' accredited. It can now receive samples.'); refreshLabs() }
+  async function declineReg(l) { await store.declineLab(l.id); await audit('Laboratory registration declined for ' + l.name, l.name); toast(l.name + ' registration declined.', 'warn'); refreshLabs() }
   async function qa(l) { await audit('QA audit recorded', l.name) }
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>HEFAMAA accredits laboratories and records QA audits. Suspending accreditation removes a lab from the food handler booking list immediately.</div>
+      {pending.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <h3 className="serif" style={{ fontSize: 17, marginBottom: 4 }}>Pending laboratory registrations</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 12 }}>New laboratories awaiting accreditation. Approving one makes it available to food handlers.</p>
+          {pending.map(l => (
+            <div className="ord" key={l.id}>
+              <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{[l.lga || l.area, l.contactPerson, l.phone].filter(Boolean).join(' · ')}</div>{l.address && <div className="muted" style={{ fontSize: 12 }}>{l.address}</div>}</div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Pending</span></div>
+              <div className="row-between" style={{ marginTop: 12 }}>
+                <button className="btn sm danger" onClick={() => guard('Decline registration for ' + l.name, () => declineReg(l))}>Decline</button>
+                <button className="btn p sm" onClick={() => guard('Accredit ' + l.name, () => approveReg(l))}>Approve accreditation</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <h3 className="serif" style={{ fontSize: 17, marginBottom: 8 }}>Accredited &amp; listed laboratories</h3>
       <SearchBar value={q} onChange={setQ} placeholder="Search laboratories by name, area or accreditation number..." />
       {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).length === 0 && <div className="placeholder">No laboratories match your search.</div>}
       {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).map(l => (
@@ -3285,7 +3366,8 @@ function Insights({ session }) {
   if (d.v === 'sterling') return (
     <div className="chartgrid">
       <ChartCard title="Escrow position" hint="by value"><Donut center={naira(d.heldAmt + d.relAmt)} sub="in system" data={[{ label: 'Held in escrow', value: d.heldAmt || 0.0001, display: naira(d.heldAmt), color: CHART[1] }, { label: 'Released', value: d.relAmt || 0.0001, display: naira(d.relAmt), color: CHART[0] }]} /></ChartCard>
-      <ChartCard title="Where a ₦15,000 fee goes" hint="five-way waterfall"><Bars unit="naira" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, color: CHART[i % CHART.length] }))} /></ChartCard>
+      <ChartCard title="Where a ₦15,000 food fee goes" hint="five-way waterfall"><Bars unit="naira" data={WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, color: CHART[i % CHART.length] }))} /></ChartCard>
+      <ChartCard title="Where a ₦65,000 water fee goes" hint="four-way waterfall"><Bars unit="naira" data={WATER_WATERFALL.map((w, i) => ({ label: w.who.split(',')[0], value: w.amount, color: CHART[i % CHART.length] }))} /></ChartCard>
       <ChartCard title="Transactions by type"><Bars data={[{ label: 'Food handler', value: d.food, color: CHART[0] }, { label: 'Water facility', value: d.water, color: CHART[3] }]} /></ChartCard>
     </div>
   )
