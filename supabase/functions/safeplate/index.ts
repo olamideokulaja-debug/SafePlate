@@ -206,6 +206,34 @@ Deno.serve(async (req) => {
       return json({ ok: true, results })
     }
 
+    // ---- Certificate expiry reminders (built ready; trigger on a daily schedule) ----
+    // Intended to run once a day via a Supabase Scheduled Function or pg_cron calling
+    // this action. It texts holders whose certificate expires in 30, 14 or 7 days.
+    // Requires TERMII_API_KEY to be live; until then, sends are attempted and skipped.
+    if (action === 'send-reminders') {
+      const { data: certs } = await db.from('certificates').select('safeplate_id, expiry, name, status').eq('status', 'VALID')
+      const now = Date.now(), day = 86400000
+      const key = Deno.env.get('TERMII_API_KEY')
+      let sent = 0, due = 0
+      for (const c of (certs || [])) {
+        if (!c.expiry) continue
+        const daysLeft = Math.round((new Date(c.expiry).getTime() - now) / day)
+        if (![30, 14, 7].includes(daysLeft)) continue
+        due++
+        const { data: fh } = await db.from('food_handlers').select('phone').eq('safeplate_id', c.safeplate_id).maybeSingle()
+        const phone = fh && fh.phone
+        await db.from('notifications').insert({ audience: 'all', title: 'Certificate expiring', body: (c.name || c.safeplate_id) + ' expires in ' + daysLeft + ' days' })
+        if (phone && key) {
+          try {
+            await fetch('https://api.ng.termii.com/api/sms/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: phone, from: Deno.env.get('TERMII_SENDER_ID') || 'SafePlate', sms: 'SafePlate: your Certificate of Fitness (' + c.safeplate_id + ') expires in ' + daysLeft + ' days. Renew to stay compliant.', type: 'plain', channel: 'generic', api_key: key }) })
+            sent++
+          } catch (e) { /* Termii unavailable; reminder still logged in notifications */ }
+        }
+      }
+      await db.from('audit_log').insert({ actor: 'system', role: 'system', action: 'Expiry reminders processed: ' + due + ' due, ' + sent + ' SMS sent', subject: '' })
+      return json({ ok: true, due, sent })
+    }
+
     // ---- Send a 2FA OTP over Termii ----
     if (action === 'send-otp') {
       if (OTP_BYPASS) return json({ ok: true, sent: false, bypass: true })

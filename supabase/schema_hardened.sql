@@ -480,3 +480,6 @@ alter table laboratories add column if not exists status text default 'Accredite
 drop policy if exists lab_register on laboratories;
 create policy lab_register on laboratories for insert to authenticated
   with check (auth_role() = 'laboratory' or is_regulator());
+
+-- Officer case assignment: which officer an establishment is assigned to.
+alter table establishments add column if not exists assigned_to text;

@@ -98,10 +98,11 @@ async function payWithPaystack({ email, amountNaira, reference }) {
 const STRINGS = {
   en: {
     signin: 'Sign in', signout: 'Sign out', back: 'Back',
-    nav_overview: 'Overview', nav_system: 'The system', nav_impact: 'Impact', nav_fees: 'Fees', nav_verify: 'Verify',
+    nav_overview: 'Overview', nav_home: 'Home', nav_system: 'The system', nav_impact: 'Impact', nav_fees: 'Fees', nav_verify: 'Verify',
     nav_testing: 'My testing', nav_queue: 'Laboratory queue', nav_team: 'My team', nav_water: 'Water testing',
     nav_review: 'Review', nav_certificates: 'Certificates', nav_analytics: 'Analytics', nav_audit: 'Audit trail',
     nav_enforcement: 'Enforcement', nav_accreditation: 'Accreditation', nav_ledger: 'Escrow ledger', nav_releases: 'Releases', nav_fund: 'Fund', nav_reconcile: 'Reconciliation',
+    nav_batch: 'Batch release',
     hero_eyebrow: 'Statewide, live compliance', hero_title: 'Every plate in Lagos, backed by a verified food handler.',
     hero_lede: 'SafePlate registers, tests, certifies and monitors every food handler in Lagos State, through accredited laboratories, with payments held in escrow and released only on approved results.',
     cta_register: 'Register as a food handler', cta_verify: 'Verify a certificate',
@@ -364,6 +365,14 @@ function normaliseCert(cert) {
 const toSnake = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/[A-Z]/g, m => '_' + m.toLowerCase()), v])) : o
 const toCamel = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v])) : o
 const camelList = a => (a || []).map(toCamel)
+// Export an array of row objects to a downloadable CSV file.
+function exportCsv(rows, columns, filename) {
+  const esc = v => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }
+  const header = columns.map(c => esc(c.label)).join(',')
+  const body = (rows || []).map(r => columns.map(c => esc(typeof c.get === 'function' ? c.get(r) : r[c.key])).join(',')).join('\n')
+  const blob = new Blob(['\ufeff' + header + '\n' + body], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href)
+}
 
 const store = {
   async signUp(email, password, meta) {
@@ -871,13 +880,13 @@ function tabsForSession(session) {
     case 'laboratory': return [{ id: 'queue', label: t('nav_queue') }, { id: 'verify', label: t('nav_verify') }]
     case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
-      { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
-      { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
+      { id: 'home', label: t('nav_home') }, { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
+      { id: 'batch', label: t('nav_batch') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
-      if (session.agency === 'LASEPA') return [{ id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      if (session.agency === 'HEFAMAA') return [{ id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      return [{ id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'HEFAMAA') return [{ id: 'home', label: t('nav_home') }, { id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
     default: return [{ id: 'verify', label: t('nav_verify') }]
   }
 }
@@ -911,7 +920,7 @@ function Styles() {
       .brand small{display:block;color:var(--muted);font-size:11px;letter-spacing:.03em;text-transform:uppercase}
       .navtabs{display:flex;gap:2px;flex-wrap:wrap;flex:1}
       .bar.app .navtabs{flex:initial}
-      .navtab{padding:9px 14px;border:0;background:none;font-weight:600;font-size:14px;color:var(--muted);border-radius:8px}
+      .navtab{padding:11px 16px;border:0;background:none;font-weight:600;font-size:14.5px;color:var(--muted);border-radius:9px;min-height:42px}
       .navtab.on{color:var(--green);background:var(--green-pale)}
       .bar.app .actions:before{content:'';width:1px;height:24px;background:var(--line);margin:0 4px}
       .navtab:hover{color:var(--ink)}
@@ -931,13 +940,13 @@ function Styles() {
       .bellrow b{font-size:13.5px}
       .bellts{font-size:11px;color:var(--muted);margin-top:3px}
 
-      .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:10px 16px;border-radius:9px;font-weight:600;font-size:14px;transition:.15s}
+      .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:12px 20px;border-radius:10px;font-weight:600;font-size:14.5px;min-height:44px;transition:.15s}
       .btn:hover{border-color:var(--green)}
       .btn.p{background:var(--green);border-color:var(--green);color:#fff}
       .btn.p:hover{background:#00560a}
       .btn.g{background:var(--gold);border-color:var(--gold);color:#3a2600}
       .btn.ghost{background:transparent;border-color:transparent}
-      .btn.sm{padding:7px 12px;font-size:13px}
+      .btn.sm{padding:9px 15px;font-size:13.5px;min-height:38px}
       .btn.danger{border-color:#e6bcbc;color:#b3261e}
       .btn.danger:hover{border-color:#b3261e}
       .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -973,12 +982,12 @@ function Styles() {
       .burden .cell .lbl{margin-top:10px;font-size:14px;color:#d7e0ea}
       .burden .cell .src{margin-top:10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9fb2c7}
 
-      .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px}
+      .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px}
       .center-narrow{max-width:520px;margin:0 auto}
       .verify-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;max-width:560px}
       .field{display:block;margin-bottom:14px}
       .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
-      .field input,.field select{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff}
+      .field input,.field select{width:100%;padding:13px 15px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;min-height:48px}
       .field input:focus,.field select:focus{outline:2px solid var(--green);border-color:var(--green)}
       .result{margin-top:18px;border-radius:12px;padding:18px;border:1px solid var(--line)}
       .result.VALID{background:var(--green-pale);border-color:#bcdcbc}
@@ -1026,7 +1035,9 @@ function Styles() {
       .placeholder{border:1.5px dashed var(--line);border-radius:14px;padding:34px;text-align:center;color:var(--muted)}
 
       .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
-      .tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+      .tile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px}
+      .trend{font-size:11.5px;font-weight:700;margin-top:6px}
+      .attn-pill{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 16px;font-size:13.5px;display:flex;align-items:baseline;gap:7px}
       .tile .v{font-family:'Lora',serif;font-size:24px;color:var(--navy)}
       .tile .k{font-size:12px;color:var(--muted);margin-top:4px}
       .modal-bg{position:fixed;inset:0;background:rgba(6,20,14,.5);display:grid;place-items:center;z-index:80;padding:20px}
@@ -1065,6 +1076,7 @@ function Styles() {
       .iconbtn{border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;min-width:38px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;justify-content:center;color:var(--ink);font-weight:700;font-size:12px;transition:.15s;position:relative}
       .iconbtn:hover{border-color:var(--green);color:var(--green)}
       .iconbtn .dot{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid #fff}
+      .notif-count{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--gold);color:#3a2a00;border:1.5px solid #fff;font-size:10px;font-weight:800;font-style:normal;display:grid;place-items:center;line-height:1}
       .iconbtn.lang svg{opacity:.7}
       .wswrap{position:relative}
       .wsbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;padding:0 11px;font-weight:700;font-size:12.5px;color:var(--navy);transition:.15s}
@@ -1139,7 +1151,7 @@ function Styles() {
       .sidebar{width:240px;flex:0 0 240px;background:#fff;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column}
       .sidebrand{display:flex;align-items:center;gap:11px;border:0;background:none;padding:8px 8px 16px;margin-bottom:8px;border-bottom:1px solid var(--line);cursor:pointer}
       .sidenav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
-      .sidelink{display:flex;align-items:center;gap:12px;padding:11px 12px;border:0;background:none;border-radius:10px;font-weight:600;font-size:14.5px;color:var(--muted);text-align:left;cursor:pointer;transition:background .15s,color .15s}
+      .sidelink{display:flex;align-items:center;gap:12px;padding:13px 14px;border:0;background:none;border-radius:11px;font-weight:600;font-size:15px;color:var(--muted);text-align:left;cursor:pointer;min-height:46px;transition:background .15s,color .15s}
       .sidelink svg{width:18px;height:18px;flex:0 0 18px;opacity:.75}
       .sidelink:hover{background:var(--green-pale);color:var(--ink)}
       .sidelink.on{background:var(--green-pale);color:var(--accent, var(--green));box-shadow:inset 3px 0 0 var(--accent, var(--green))}
@@ -1202,6 +1214,16 @@ function Styles() {
       body{background:radial-gradient(130% 90% at 50% -20%, #eaf5ee 0%, var(--paper) 46%) fixed}
       ::selection{background:var(--green);color:#fff}
       a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--green-glow);outline-offset:2px}
+      #maincontent:focus{outline:none}
+      .skip-link{position:absolute;left:-9999px;top:8px;z-index:200;background:var(--green);color:#fff;padding:11px 18px;border-radius:9px;font-weight:700;font-size:14px}
+      .skip-link:focus{left:12px}
+      @media print{
+        .apptop,.sidebar,.hamburger,.footer,.navtabs,.actions,.consent,.toast,.bellpanel,.skip-link,.avatar,.floaty{display:none!important}
+        .appmain,.page,.wrap{padding:0!important;margin:0!important}
+        .trust{box-shadow:none!important;border:2px solid var(--green)!important;page-break-inside:avoid}
+        body,html,#root{background:#fff!important}
+        .btn{display:none!important}
+      }
       .serif{letter-spacing:-.012em}
       .hero h1{font-size:clamp(34px,5.2vw,60px);line-height:1.02;font-weight:700;letter-spacing:-.026em}
       .sec{letter-spacing:-.02em}
@@ -1370,7 +1392,7 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
               <div className="bellwrap">
                 <button className="iconbtn" onClick={toggleBell} aria-label="Notifications">
                   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-                  {notices.length > 0 && <i className="dot" />}
+                  {notices.length > 0 && <i className="notif-count">{notices.length > 9 ? '9+' : notices.length}</i>}
                 </button>
                 {bell && (
                   <div className="bellpanel" onMouseLeave={() => setBell(false)}>
@@ -1478,7 +1500,7 @@ function AppTopBar({ session, onSignOut, lang, onLang, onPrivacy, admin, workspa
         <div className="bellwrap">
           <button className="iconbtn" onClick={toggleBell} aria-label="Notifications">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-            {notices.length > 0 && <i className="dot" />}
+            {notices.length > 0 && <i className="notif-count">{notices.length > 9 ? '9+' : notices.length}</i>}
           </button>
           {bell && (
             <div className="bellpanel" onMouseLeave={() => setBell(false)}>
@@ -1710,6 +1732,7 @@ function VerifyWidget({ initialId }) {
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>Checked {new Date().toLocaleString('en-GB')}</div>
             {result.status === 'VALID' && <button className="btn g" style={{ marginTop: 14 }} onClick={() => generateCertPDF(result)}>Download certificate (PDF)</button>}
           </div>
+          {result.status === 'VALID' && <div style={{ background: '#fff', padding: 8, borderRadius: 12, border: '1px solid var(--line)', textAlign: 'center' }}><QRCodeSVG value={window.location.origin + '/#/verify/' + (result.safeplateId || result.safeplate_id)} size={104} fgColor={PALETTE.navy} level="M" /><div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Scan to verify</div></div>}
           {result.photo && <img src={result.photo} alt="Certificate holder" style={{ width: 108, height: 128, objectFit: 'cover', borderRadius: 12, border: '3px solid ' + (result.status === 'VALID' ? 'var(--green)' : '#e3c9c9'), boxShadow: 'var(--sh-md)' }} />}
         </div>
       )}
@@ -2204,6 +2227,7 @@ function OfficersAdmin({ agency }) {
   async function load() { setOfficers(await store.listOfficers(agency)) }
   async function add() {
     if (!nf.name.trim() || !nf.email.trim()) return
+    if (nf.phone && !/^0\d{10}$/.test(nf.phone.replace(/\s+/g, ''))) { toast('Enter a valid 11-digit phone number, e.g. 08031234567.', 'err'); return }
     if (nf.badge && officers.some(o => (o.badge || '') === nf.badge.trim())) { toast('That badge number is already in use.', 'err'); return }
     await store.addOfficer({ ...nf, badge: nf.badge.trim(), target: Number(nf.target) || 20, agency, status: 'Active' })
     setNf({ name: '', email: '', phone: '', badge: '', lga: '', target: '20' }); toast('Officer added to the roster.'); load()
@@ -2265,7 +2289,7 @@ function OfficersAdmin({ agency }) {
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>The officer signs in with this email and is active immediately. Officers who self-register appear above for your approval.</p>
       </div>
-      <h3 className="serif" style={{ fontSize: 17, marginBottom: 8 }}>Roster</h3>
+      <div className="row-between" style={{ alignItems: 'baseline' }}><h3 className="serif" style={{ fontSize: 17, marginBottom: 8 }}>Roster</h3><button className="btn sm" onClick={() => exportCsv(active, [{ label: 'Name', key: 'name' }, { label: 'Badge', key: 'badge' }, { label: 'Area', key: 'lga' }, { label: 'Target', get: o => o.target || 20 }, { label: 'Email', key: 'email' }, { label: 'Status', key: 'status' }], 'safeplate-officers.csv')}>Export CSV</button></div>
       <SearchBar value={q} onChange={setQ} placeholder="Search officers by name, badge, area or email..." />
       <div style={{ overflowX: 'auto' }}>
         <table className="audit-tbl">
@@ -2438,8 +2462,9 @@ function OfficerInspect({ session }) {
       <div className="note" style={{ marginBottom: 16 }}>Record an inspection of {lab ? 'a laboratory' : 'an establishment'}. A warning applies immediately; a fine, closure or licence action is sent to your supervisor for approval.</div>
       <SearchBar value={q} onChange={setQ} placeholder={lab ? 'Search laboratories...' : 'Search establishments by name or LGA...'} />
       {targets.filter(x => smatch(q, x.name, x.lga || x.area, x.compliance)).length === 0 && <div className="placeholder">No {lab ? 'laboratories' : 'establishments'} match your search.</div>}
-      {targets.filter(x => smatch(q, x.name, x.lga || x.area, x.compliance)).map(tgt => (
-        <div className="ord" key={tgt.id}>
+      {targets.filter(x => smatch(q, x.name, x.lga || x.area, x.compliance)).sort((a, b) => (b.assignedTo === session.email ? 1 : 0) - (a.assignedTo === session.email ? 1 : 0)).map(tgt => (
+        <div className="ord" key={tgt.id} style={tgt.assignedTo === session.email ? { borderColor: 'var(--green)' } : undefined}>
+          {tgt.assignedTo === session.email && <span className="badge" style={{ background: '#e7f4ec', color: '#0a6b39', marginBottom: 8 }}>Assigned to you</span>}
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{tgt.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{(tgt.lga || tgt.area || '')}{tgt.compliance ? ' · ' + tgt.compliance : ''}{tgt.sanction ? ' · ' + tgt.sanction : ''}</div></div>{open !== tgt.id && <button className="btn sm" onClick={() => setOpen(tgt.id)}>Inspect</button>}</div>
           {open === tgt.id && (
             <div style={{ marginTop: 12 }}>
@@ -2515,6 +2540,43 @@ function OfficerActivity({ session }) {
   )
 }
 
+function RegulatorHome({ session }) {
+  const agency = session.agency || 'LSMoH'
+  const [att, setAtt] = useState(null)
+  useEffect(() => { (async () => {
+    try {
+      if (agency === 'LSMoH') {
+        const orders = await store.listAllOrders(); const submitted = orders.filter(o => o.status === 'Submitted').length
+        const appeals = (await store.listAppeals('LSMoH').catch(() => [])).filter(a => a.status === 'Open').length
+        const tickets = (await store.listTickets().catch(() => [])).filter(t => (t.status || 'Open') === 'Open').length
+        setAtt([{ n: submitted, label: 'results awaiting your review', tab: 'Review' }, { n: appeals, label: 'appeals to decide', tab: 'Review' }, { n: tickets, label: 'support requests open', tab: 'Review' }])
+      } else if (agency === 'LASEPA') {
+        const w = await store.listAllWaterTests(); const pending = w.filter(x => x.status === 'Submitted, pending LASEPA').length
+        const appeals = (await store.listAppeals('LASEPA').catch(() => [])).filter(a => a.status === 'Open').length
+        setAtt([{ n: pending, label: 'water results awaiting approval', tab: 'Water' }, { n: appeals, label: 'appeals to decide', tab: 'Enforcement' }])
+      } else {
+        const pend = (await store.listPendingLabs().catch(() => [])).length
+        setAtt([{ n: pend, label: 'laboratory registrations to approve', tab: 'Accreditation' }])
+      }
+    } catch (e) { setAtt([]) }
+  })() /* eslint-disable-next-line */ }, [])
+  return (
+    <>
+      <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
+      {att && att.some(a => a.n > 0) && (
+        <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7', marginBottom: 16 }}>
+          <b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>Needs your attention today</b>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+            {att.filter(a => a.n > 0).map((a, i) => <div key={i} className="attn-pill"><b style={{ fontSize: 18 }}>{a.n}</b> {a.label} <span className="muted">· {a.tab} tab</span></div>)}
+          </div>
+        </div>
+      )}
+      {att && !att.some(a => a.n > 0) && <div className="note" style={{ marginBottom: 16 }}>Nothing needs your immediate attention. All queues are clear.</div>}
+      <Insights session={session} />
+    </>
+  )
+}
+
 function RegulatorModule({ session, tab }) {
   const agency = session.agency || 'LSMoH'
   const { guard, modal } = useGuard()
@@ -2522,11 +2584,10 @@ function RegulatorModule({ session, tab }) {
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
-      <div className="tiles">{METRICS.map(m => <div className="tile" key={m.k}><div className="v">{m.v}</div><div className="k">{m.k}</div></div>)}</div>
-      {(agency === 'LASEPA' || agency === 'HEFAMAA') && <Insights session={session} />}
+      {tab === 'home' && <RegulatorHome session={session} />}
       {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
-      {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} /><AppealsList agency="LASEPA" /></>}
+      {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} /><AppealsList agency="LASEPA" /></>}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
@@ -2540,6 +2601,7 @@ function LSMoHReview({ session, guard, audit }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
   async function refresh() {
     setLoading(true)
     const all = await store.listAllOrders()
@@ -2555,6 +2617,14 @@ function LSMoHReview({ session, guard, audit }) {
     setOrders(queue); setLoading(false)
   }
   useEffect(() => { refresh() }, [])
+  async function approveAll() {
+    const clean = orders.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer'))
+    if (!clean.length) { toast('No clean, readable results are ready to approve.', 'warn'); return }
+    setBulkBusy(true)
+    for (const o of clean) { try { await approve(o) } catch (e) { /* skip failures */ } }
+    setBulkBusy(false)
+    toast('Bulk approval complete: ' + clean.length + ' certificate' + (clean.length === 1 ? '' : 's') + ' issued.')
+  }
   async function approve(o) {
     if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); toast('Result approved, certificate issued.'); refresh(); return }
     const anyRefer = o.results && o.tests.some(t => o.results[t] === 'refer')
@@ -2579,6 +2649,14 @@ function LSMoHReview({ session, guard, audit }) {
   return (
     <div>
       <div className="field" style={{ maxWidth: 360 }}><label>Search this queue by SAFEPLATE ID or name</label><input value={search} onChange={e => setSearch(e.target.value)} placeholder="SP-LG-... or name" /></div>
+      {!loading && orders.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer')).length > 1 && (
+        <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7' }}>
+          <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{orders.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer')).length} clean results ready</b><div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>Approve every readable, all-pass result at once. Referred or unreadable results are left for individual review.</div></div>
+            <button className="btn p sm" onClick={() => guard('Approve all clean results', approveAll)} disabled={bulkBusy}>{bulkBusy ? 'Approving...' : 'Approve all clean'}</button>
+          </div>
+        </div>
+      )}
       {loading && <p className="muted">Loading results awaiting review...</p>}
       {!loading && shown.length === 0 && <div className="placeholder">No results are awaiting Ministry review. Submitted laboratory results appear here.</div>}
       {!loading && shown.map(o => (
@@ -2611,17 +2689,24 @@ function CertAdmin({ guard, audit }) {
   const key = c => ((c.safeplateId || c.safeplate_id || '') + ' ' + (c.name || '') + ' ' + (c.cert_no || c.certNo || c.series || '') + ' ' + (c.status || '') + ' ' + (c.lab || '')).toLowerCase()
   const shown = rows.filter(c => !ql || key(c).includes(ql))
   const counts = rows.reduce((a, c) => { a[c.status] = (a[c.status] || 0) + 1; return a }, {})
+  const _wk = 604800000, _n = Date.now()
+  const issuedThisWk = rows.filter(c => c.issued && _n - new Date(c.issued).getTime() <= _wk).length
+  const issuedLastWk = rows.filter(c => { const d = c.issued ? _n - new Date(c.issued).getTime() : 1e18; return d > _wk && d <= 2 * _wk }).length
+  const issuedDelta = issuedThisWk - issuedLastWk
   return (
     <div>
       <p className="muted" style={{ marginTop: 0 }}>Every Certificate of Fitness issued statewide. Search, download a copy, or revoke where compliance requires it.</p>
       <div className="tiles" style={{ marginBottom: 14 }}>
-        <div className="tile"><div className="v">{rows.length}</div><div className="k">Certificates issued</div></div>
+        <div className="tile"><div className="v">{rows.length}</div><div className="k">Certificates issued</div>{issuedThisWk + issuedLastWk > 0 && <div className="trend" style={{ color: issuedDelta >= 0 ? 'var(--green)' : '#b3261e' }}>{issuedDelta >= 0 ? '\u25b2 ' : '\u25bc '}{Math.abs(issuedDelta)} vs last week</div>}</div>
         <div className="tile"><div className="v">{counts['VALID'] || 0}</div><div className="k">Valid</div></div>
         <div className="tile"><div className="v">{counts['EXPIRED'] || 0}</div><div className="k">Expired</div></div>
         <div className="tile"><div className="v">{counts['REVOKED'] || 0}</div><div className="k">Revoked</div></div>
       </div>
       <div className="audsearch" style={{ maxWidth: 460 }}><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by SAFEPLATE ID, name, certificate number or status..." /></div>
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Showing {Math.min(shown.length, 200)} of {shown.length}{shown.length !== rows.length ? ' matching (' + rows.length + ' total)' : ' certificates'}.</div>
+      <div className="row-between" style={{ alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <div className="muted" style={{ fontSize: 12.5 }}>Showing {Math.min(shown.length, 200)} of {shown.length}{shown.length !== rows.length ? ' matching (' + rows.length + ' total)' : ' certificates'}.</div>
+        <button className="btn sm" onClick={() => exportCsv(shown, [{ label: 'SAFEPLATE ID', get: c => c.safeplateId || c.safeplate_id }, { label: 'Name', key: 'name' }, { label: 'Cert No', get: c => c.cert_no || c.certNo || c.series || '' }, { label: 'Laboratory', key: 'lab' }, { label: 'Issued', key: 'issued' }, { label: 'Expiry', key: 'expiry' }, { label: 'Status', key: 'status' }], 'safeplate-certificates.csv')}>Export CSV</button>
+      </div>
       {shown.length === 0 && <div className="placeholder">No certificates match your search.</div>}
       {shown.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
@@ -2660,11 +2745,13 @@ function SearchBar({ value, onChange, placeholder, hint }) {
 }
 const smatch = (q, ...fields) => { const ql = (q || '').trim().toLowerCase(); return !ql || fields.filter(Boolean).join(' ').toLowerCase().includes(ql) }
 
-function Enforcement({ guard, audit }) {
+function Enforcement({ guard, audit, agency }) {
   const [ests, setEsts] = useState([])
   const [q, setQ] = useState('')
-  async function refresh() { setEsts(await store.listEstablishments()) }
-  useEffect(() => { refresh() }, [])
+  const [officers, setOfficers] = useState([])
+  async function refresh() { setEsts(await store.listEstablishments()); try { setOfficers((await store.listOfficers(agency || 'LASEPA')).filter(o => o.status === 'Active')) } catch (e) { setOfficers([]) } }
+  useEffect(() => { refresh() /* eslint-disable-next-line */ }, [])
+  async function assign(e, email) { await store.updateEstablishment(e.id, { assignedTo: email || null }); await audit(email ? 'Case assigned to officer' : 'Case unassigned', e.name); toast(email ? 'Assigned to ' + ((officers.find(o => o.email === email) || {}).name || email) + '.' : 'Unassigned.'); refresh() }
   async function escalate(e) { const idx = e.sanction ? SANCTION_LADDER.indexOf(e.sanction) : -1; const next = SANCTION_LADDER[Math.min(idx + 1, SANCTION_LADDER.length - 1)]; await store.updateEstablishment(e.id, { sanction: next, appeal: null }); await audit('Sanction escalated to ' + next, e.name); refresh() }
   async function appeal(e) { await store.updateEstablishment(e.id, { appeal: 'Under review' }); await audit('Appeal lodged and under review', e.name); refresh() }
   return (
@@ -2676,6 +2763,7 @@ function Enforcement({ guard, audit }) {
         <div className="ord" key={e.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.lga} · {e.compliance}</div></div>{e.appeal && <span className="status Sample">Appeal {e.appeal}</span>}</div>
           <div className="ladder">{SANCTION_LADDER.map(r => <span key={r} className={'rung ' + (e.sanction === r ? 'on' : '')}>{r}</span>)}</div>
+          {officers.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}><span className="muted" style={{ fontSize: 12.5 }}>Assigned officer:</span><select value={e.assignedTo || ''} onChange={ev => assign(e, ev.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }}><option value="">Unassigned</option>{officers.map(o => <option key={o.id} value={o.email}>{o.name}{o.lga ? ' (' + o.lga + ')' : ''}</option>)}</select></div>}
           <div className="row-between"><button className="btn sm danger" onClick={() => guard('Escalate sanction for ' + e.name, () => escalate(e))}>Escalate sanction</button><button className="btn sm" onClick={() => guard('Lodge appeal for ' + e.name, () => appeal(e))}>Lodge appeal</button></div>
         </div>
       ))}
@@ -2751,7 +2839,12 @@ function AuditPanel() {
   const [view, setView] = useState('tracker')
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
   useEffect(() => { store.listAudit().then(setRows) }, [])
+  function exportAuditCsv() {
+    exportCsv(rows, [{ label: 'Timestamp', key: 'ts' }, { label: 'Role', key: 'role' }, { label: 'Actor', key: 'actor' }, { label: 'Action', key: 'action' }, { label: 'Subject', key: 'subject' }, { label: 'IP', key: 'ip' }], 'safeplate-audit-trail.csv')
+  }
   function exportTxt() {
     const header = 'timestamp\trole\tactor\taction\tsubject\tip'
     const body = rows.map(r => [r.ts, r.role, r.actor, r.action, r.subject || '', r.ip].join('\t'))
@@ -2768,11 +2861,14 @@ function AuditPanel() {
   rows.forEach(r => { const d = new Date(r.ts); d.setHours(0, 0, 0, 0); const idx = DAYS - 1 - Math.round((midnight - d) / 86400000); if (idx >= 0 && idx < DAYS) byDay[idx]++ })
   const dayLabels = byDay.map((_, i) => i === 0 ? '14d' : i === 7 ? '7d' : i === DAYS - 1 ? 'today' : '')
   const ql = q.trim().toLowerCase()
-  const shown = rows.filter(r => (filter === 'all' || auditCat(r.action).cat === filter) && (!ql || (r.action + ' ' + r.actor + ' ' + (r.subject || '') + ' ' + r.role).toLowerCase().includes(ql)))
+  const fromT = from ? new Date(from + 'T00:00:00').getTime() : null
+  const toT = to ? new Date(to + 'T23:59:59').getTime() : null
+  const shown = rows.filter(r => (filter === 'all' || auditCat(r.action).cat === filter) && (!ql || (r.action + ' ' + r.actor + ' ' + (r.subject || '') + ' ' + r.role).toLowerCase().includes(ql)) && (!fromT || new Date(r.ts).getTime() >= fromT) && (!toT || new Date(r.ts).getTime() <= toT))
   return (
     <div>
       <div className="row-between" style={{ marginBottom: 14 }}>
         <div className="viewtog"><button className={view === 'tracker' ? 'on' : ''} onClick={() => setView('tracker')}>Tracker</button><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button></div>
+        <button className="btn sm" onClick={exportAuditCsv} disabled={!rows.length}>Export CSV</button>
         <button className="btn sm" onClick={exportTxt} disabled={!rows.length}>Export tamper-evident report</button>
       </div>
       <div className="note" style={{ marginBottom: 16 }}>Append-only. Entries cannot be edited or deleted. Actor, role, IP and timestamp are captured on every action.</div>
@@ -2785,7 +2881,12 @@ function AuditPanel() {
             <div className="tile"><div className="v">{actors}</div><div className="k">Distinct actors</div></div>
             <div className="tile"><div className="v">{catList.length}</div><div className="k">Action types</div></div>
           </div>
-          <div className="audsearch"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by actor, action or SAFEPLATE ID..." /></div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="audsearch" style={{ flex: 1, minWidth: 220 }}><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by actor, action or SAFEPLATE ID..." /></div>
+            <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>From <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }} /></label>
+            <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>To <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }} /></label>
+            {(from || to) && <button className="btn sm" onClick={() => { setFrom(''); setTo('') }}>Clear dates</button>}
+          </div>
           <div className="chartgrid">
             <ChartCard title="Actions by type" hint="whole trail"><Bars data={catList.map(k => ({ label: k, value: cats[k], color: auditCatColor(k) }))} /></ChartCard>
             <ChartCard title="Activity over time" hint="events per day, 14 days"><Line series={byDay} labels={dayLabels} /></ChartCard>
@@ -2828,6 +2929,8 @@ function SterlingModule({ session, tab }) {
   const [escrow, setEscrow] = useState([])
   const [releases, setReleases] = useState([])
   const [q, setQ] = useState('')
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchDone, setBatchDone] = useState(0)
   async function refresh() { setEscrow(await store.listEscrow()); setReleases(await store.listReleases()) }
   useEffect(() => { refresh() }, [])
 
@@ -2854,15 +2957,48 @@ function SterlingModule({ session, tab }) {
     refresh()
   }
 
+  async function releaseAll() {
+    const list = escrow.filter(e => e.status === 'HELD' && new Set(releases.filter(r => r.status === 'Instructed').map(r => r.safeplateId)).has(e.safeplateId))
+    setBatchBusy(true); setBatchDone(0)
+    let ok = 0
+    for (const e of list) {
+      try {
+        if (SUPABASE_READY) { await store.fn('release-escrow', { safeplateId: e.safeplateId }) }
+        else { await store.releaseEscrow(e.safeplateId, session.name); await store.appendAudit({ actor: session.name, role: 'Sterling Bank', action: 'Escrow released, full waterfall disbursed', subject: e.safeplateId }); await store.notify('laboratory', 'Payment released', e.safeplateId + ', ' + naira(e.amount)) }
+        ok++; setBatchDone(ok)
+      } catch (err) { toast('Some releases could not complete: ' + (err.message || 'try again'), 'err') }
+    }
+    setBatchBusy(false)
+    toast('Released ' + ok + ' approved payment' + (ok === 1 ? '' : 's') + '.')
+    refresh()
+  }
+
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Sterling Bank escrow</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
-      <div className="tiles">{tiles.map(t => <div className="tile" key={t.k}><div className="v">{t.v}</div><div className="k">{t.k}</div></div>)}</div>
-      <div className="note" style={{ marginBottom: 18 }}>Sterling Bank never sees test results or medical data. Releases happen only after Ministry approval, and disburse the full waterfall atomically, all legs or none.</div>
-      <Insights session={session} />
-      <h3 className="serif" style={{ fontSize: 18, margin: '18px 0 4px' }}>{tab === 'ledger' ? 'Escrow ledger' : tab === 'releases' ? 'Release instructions' : tab === 'fund' ? 'State regulatory fund' : 'Reconciliation'}</h3>
-      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>{tab === 'ledger' ? 'Every escrow transaction, food handler and water facility, held or released.' : tab === 'releases' ? 'Ministry-approved instructions awaiting disbursement, and recent releases.' : tab === 'fund' ? 'Oversight fund remitted to the State on each released transaction.' : 'End-of-day totals reconciling held, released and remitted balances.'}</p>
+
+      {tab === 'home' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{naira(sum(held))}</div><div className="k">Held in escrow</div></div>
+          <div className="tile"><div className="v">{naira(sum(released))}</div><div className="k">Released to date</div></div>
+          <div className="tile"><div className="v">{pending.length}</div><div className="k">Awaiting release</div></div>
+          <div className="tile"><div className="v">{naira(fundRemitted)}</div><div className="k">Fund remitted</div></div>
+        </div>
+        {pending.length > 0 ? <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7', marginBottom: 16 }}><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>Needs your attention today</b><div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}><div className="attn-pill"><b style={{ fontSize: 18 }}>{pending.length}</b> approved payment{pending.length === 1 ? '' : 's'} awaiting release <span className="muted">· Batch release tab</span></div><div className="attn-pill"><b style={{ fontSize: 18 }}>{naira(sum(pending))}</b> total to disburse</div></div></div> : <div className="note" style={{ marginBottom: 16 }}>Nothing is awaiting release. Every Ministry-approved payment has been disbursed.</div>}
+        <Insights session={session} />
+      </>)}
+
       {tab === 'ledger' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{naira(sum(held) + sum(released))}</div><div className="k">Total in system</div></div>
+          <div className="tile"><div className="v">{naira(sum(held))}</div><div className="k">Held in escrow</div></div>
+          <div className="tile"><div className="v">{naira(sum(released))}</div><div className="k">Released to date</div></div>
+          <div className="tile"><div className="v">{escrow.length}</div><div className="k">Transactions</div></div>
+        </div>
+        <div className="note" style={{ marginBottom: 16 }}>Every escrow transaction, food handler and water facility, held or released. Sterling Bank never sees test results or medical data.</div>
+        <Insights session={session} />
+        <div className="row-between" style={{ alignItems: 'baseline', margin: '22px 0 4px' }}><h3 className="serif" style={{ fontSize: 18, margin: 0 }}>Escrow ledger</h3><button className="btn sm" onClick={() => exportCsv(escrow, [{ label: 'SAFEPLATE ID', key: 'safeplateId' }, { label: 'Name', key: 'name' }, { label: 'Laboratory', key: 'lab' }, { label: 'Type', get: e => e.type === 'WATER' ? 'Water' : 'Food handler' }, { label: 'Amount', key: 'amount' }, { label: 'Status', key: 'status' }], 'safeplate-escrow-ledger.csv')}>Export CSV</button></div>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Full transaction record. Search by any field.</p>
         <SearchBar value={q} onChange={setQ} placeholder="Search by ID, name, laboratory, type or status..." />
         <div style={{ overflowX: 'auto' }}><table className="audit-tbl">
           <thead><tr><th>SAFEPLATE ID</th><th>Name</th><th>Laboratory</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead>
@@ -2870,28 +3006,69 @@ function SterlingModule({ session, tab }) {
         </table></div>
       </>)}
 
-      {tab === 'releases' && (
-        <div>
-          {pending.length === 0 && <div className="placeholder">No approved releases are pending. When the Ministry approves a result, the instruction appears here to execute.</div>}
-          {pending.map(e => (
-            <div className="ord" key={e.safeplateId}>
-              <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.safeplateId} · {e.lab}</div></div><span className="status HELD">Approved, pending release</span></div>
-              <table className="split-tbl"><tbody>{WATERFALL.map(w => <tr key={w.who}><td>{w.who} <span className="muted">({w.pct}%)</span></td><td>{naira(w.amount)}</td></tr>)}<tr className="tot"><td>Total to disburse</td><td>{naira(FEE)}</td></tr></tbody></table>
-              <button className="btn p sm" style={{ marginTop: 12 }} onClick={() => guard('Release escrow for ' + e.safeplateId, () => release(e))}>Release full waterfall</button>
+      {tab === 'releases' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{pending.length}</div><div className="k">Awaiting release</div></div>
+          <div className="tile"><div className="v">{naira(sum(pending))}</div><div className="k">Pending amount</div></div>
+          <div className="tile"><div className="v">{naira(sum(released))}</div><div className="k">Released to date</div></div>
+          <div className="tile"><div className="v">{released.length}</div><div className="k">Releases done</div></div>
+        </div>
+        <div className="note" style={{ marginBottom: 16 }}>Ministry-approved instructions awaiting disbursement, and recent releases. Each release disburses the full waterfall atomically, all legs or none.</div>
+        {pending.length === 0 && <div className="placeholder">No approved releases are pending. When the Ministry approves a result, the instruction appears here to execute.</div>}
+        {pending.length > 1 && <div className="ord" style={{ borderColor: 'var(--green)' }}><div className="row-between"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{pending.length} approved payments awaiting release</b><div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>Total {naira(sum(pending))}. Release individually below, or all at once from the Batch release tab.</div></div></div></div>}
+        {pending.map(e => (
+          <div className="ord" key={e.safeplateId}>
+            <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.safeplateId} · {e.lab} · {e.type === 'WATER' ? 'Water facility' : 'Food handler'}</div></div><span className="status HELD">Approved, pending release</span></div>
+            <table className="split-tbl"><tbody>{(e.type === 'WATER' ? WATER_WATERFALL : WATERFALL).map(w => <tr key={w.who}><td>{w.who} <span className="muted">({w.pct}%)</span></td><td>{naira(w.amount)}</td></tr>)}<tr className="tot"><td>Total to disburse</td><td>{naira(e.amount)}</td></tr></tbody></table>
+            <button className="btn p sm" style={{ marginTop: 12 }} onClick={() => guard('Release escrow for ' + e.safeplateId, () => release(e))}>Release full waterfall</button>
+          </div>
+        ))}
+        {released.length > 0 && (<><h3 className="serif" style={{ fontSize: 17, marginTop: 24 }}>Recently released</h3>{released.slice(0, 20).map(e => (<div className="ord" key={e.safeplateId}><div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 15 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.safeplateId} · {naira(e.amount)}</div></div><span className="status RELEASED">Released</span></div></div>))}</>)}
+      </>)}
+
+      {tab === 'batch' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{pending.length}</div><div className="k">Approved, awaiting release</div></div>
+          <div className="tile"><div className="v">{naira(sum(pending))}</div><div className="k">Total to disburse</div></div>
+          <div className="tile"><div className="v">{pending.filter(e => e.type !== 'WATER').length}</div><div className="k">Food handler</div></div>
+          <div className="tile"><div className="v">{pending.filter(e => e.type === 'WATER').length}</div><div className="k">Water facility</div></div>
+        </div>
+        <div className="note" style={{ marginBottom: 16 }}>Release every payment the Ministry has already approved in a single action. Each disburses its full waterfall atomically, all legs or none. Amounts and legs are shown before you confirm.</div>
+        {pending.length === 0 ? <div className="placeholder">Nothing is awaiting release right now. Approved payments from the Ministry and LASEPA will appear here.</div> : (<>
+          <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7' }}>
+            <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div><b style={{ fontFamily: 'Lora,serif', fontSize: 19 }}>{pending.length} approved payment{pending.length === 1 ? '' : 's'} ready</b><div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Total {naira(sum(pending))} across {pending.filter(e => e.type !== 'WATER').length} food handler and {pending.filter(e => e.type === 'WATER').length} water. Disbursing to labs, LASEPA, LSMoH, technology and Sterling per waterfall.</div></div>
+              <button className="btn p" onClick={() => guard('Release all ' + pending.length + ' Ministry-approved payments, ' + naira(sum(pending)), releaseAll)} disabled={batchBusy}>{batchBusy ? 'Releasing ' + batchDone + ' of ' + pending.length + '...' : 'Release all ' + pending.length}</button>
             </div>
-          ))}
-          {released.length > 0 && (<><h3 className="serif" style={{ fontSize: 17, marginTop: 24 }}>Recently released</h3>{released.map(e => (<div className="ord" key={e.safeplateId}><div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 15 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.safeplateId} · {naira(e.amount)}</div></div><span className="status RELEASED">Released</span></div></div>))}</>)}
-        </div>
-      )}
+          </div>
+          <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="audit-tbl">
+            <thead><tr><th>SAFEPLATE ID</th><th>Name</th><th>Type</th><th>Amount</th></tr></thead>
+            <tbody>{pending.map(e => (<tr key={e.safeplateId}><td className="mono">{e.safeplateId}</td><td>{e.name}</td><td>{e.type === 'WATER' ? 'Water' : 'Food handler'}</td><td>{naira(e.amount)}</td></tr>))}<tr className="tot"><td colSpan={3}>Total</td><td>{naira(sum(pending))}</td></tr></tbody>
+          </table></div>
+        </>)}
+      </>)}
 
-      {tab === 'fund' && (
-        <div>
-          <div className="note" style={{ marginBottom: 16 }}>The 10% oversight line (formerly the COVID-19 Dedicated Fund, now the State Regulatory Fund) is remitted as {naira(FUND_PER_TXN)} on every released transaction.</div>
-          <div className="ord"><div className="row-between"><b style={{ fontFamily: 'Lora,serif', fontSize: 18 }}>Total remitted to date</b><span style={{ fontFamily: 'Lora,serif', fontSize: 22, color: 'var(--navy)' }}>{naira(fundRemitted)}</span></div><div className="muted" style={{ fontSize: 13, marginTop: 6 }}>Across {released.length} released transaction{released.length === 1 ? '' : 's'}. Food handler remits {naira(FUND_PER_TXN)}, water remits {naira(WATER_FUND)}.</div></div>
+      {tab === 'fund' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{naira(fundRemitted)}</div><div className="k">Total remitted</div></div>
+          <div className="tile"><div className="v">{naira(released.filter(e => e.type !== 'WATER').length * FUND_PER_TXN)}</div><div className="k">From food handlers</div></div>
+          <div className="tile"><div className="v">{naira(released.filter(e => e.type === 'WATER').length * WATER_FUND)}</div><div className="k">From water</div></div>
+          <div className="tile"><div className="v">{released.length}</div><div className="k">Released transactions</div></div>
         </div>
-      )}
+        <div className="note" style={{ marginBottom: 16 }}>The 10% oversight line (formerly the COVID-19 Dedicated Fund, now the State Regulatory Fund) is remitted as {naira(FUND_PER_TXN)} on every released food test and {naira(WATER_FUND)} on every water test.</div>
+        <div className="ord"><div className="row-between"><b style={{ fontFamily: 'Lora,serif', fontSize: 18 }}>Total remitted to date</b><span style={{ fontFamily: 'Lora,serif', fontSize: 22, color: 'var(--navy)' }}>{naira(fundRemitted)}</span></div><div className="muted" style={{ fontSize: 13, marginTop: 6 }}>Across {released.length} released transaction{released.length === 1 ? '' : 's'}: {released.filter(e => e.type !== 'WATER').length} food handler and {released.filter(e => e.type === 'WATER').length} water.</div></div>
+      </>)}
 
-      {tab === 'reconcile' && <Reconcile escrow={escrow} />}
+      {tab === 'reconcile' && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{naira(sum(held))}</div><div className="k">Held</div></div>
+          <div className="tile"><div className="v">{naira(sum(released))}</div><div className="k">Released</div></div>
+          <div className="tile"><div className="v">{naira(fundRemitted)}</div><div className="k">Remitted to State</div></div>
+          <div className="tile"><div className="v">{naira(sum(held) + sum(released))}</div><div className="k">Net position</div></div>
+        </div>
+        <div className="note" style={{ marginBottom: 16 }}>End-of-day totals reconciling held, released and remitted balances.</div>
+        <Reconcile escrow={escrow} />
+      </>)}
       {modal}
     </div></div>
   )
@@ -2976,6 +3153,7 @@ function EmployerTeam({ session }) {
   }
   async function addStaff() {
     if (!sName.trim() || !sPhone.trim()) return
+    if (!/^0\d{10}$/.test(sPhone.replace(/\s+/g, ''))) { setMsg('Enter a valid 11-digit phone number for the staff member, e.g. 08031234567.'); return }
     const b = { ...biz, staff: [...biz.staff, { id: 'S' + Date.now(), name: sName.trim(), phone: sPhone.trim(), status: 'Not registered' }] }
     await store.saveBusiness(session.email, b); setBiz(b); setSName(''); setSPhone('')
   }
@@ -3197,6 +3375,7 @@ function EmployerWater({ session }) {
 function WaterReview({ session, guard, audit }) {
   const [tests, setTests] = useState([])
   const [loading, setLoading] = useState(true)
+  const [bulkBusy, setBulkBusy] = useState(false)
   async function refresh() { setLoading(true); setTests(await store.listAllWaterTests()); setLoading(false) }
   useEffect(() => { refresh() }, [])
 
@@ -3215,6 +3394,14 @@ function WaterReview({ session, guard, audit }) {
     refresh()
   }
   async function flag(w) { if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); toast('Water result flagged, retest required.', 'warn'); refresh(); return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); toast('Water result flagged, retest required.', 'warn'); refresh() }
+  async function approveAllWater() {
+    const clean = tests.filter(w => w.status === 'Submitted, pending LASEPA' && waterChecks(w.results).every(c => c.ok))
+    if (!clean.length) { toast('No clean water results are ready to approve.', 'warn'); return }
+    setBulkBusy(true)
+    for (const w of clean) { try { await approve(w) } catch (e) { /* skip */ } }
+    setBulkBusy(false)
+    toast('Bulk approval complete: ' + clean.length + ' water certificate' + (clean.length === 1 ? '' : 's') + ' issued.')
+  }
 
   const pending = tests.filter(w => w.status === 'Submitted, pending LASEPA')
   const done = tests.filter(w => w.status !== 'Submitted, pending LASEPA')
@@ -3222,6 +3409,14 @@ function WaterReview({ session, guard, audit }) {
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>LASEPA is the approving authority for water. Readings are checked against WHO and NAFDAC benchmarks. Approval disburses the {naira(WATER_FEE)} fee 80/10/5/5.</div>
+      {!loading && tests.filter(w => w.status === 'Submitted, pending LASEPA' && waterChecks(w.results).every(c => c.ok)).length > 1 && (
+        <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7' }}>
+          <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{tests.filter(w => w.status === 'Submitted, pending LASEPA' && waterChecks(w.results).every(c => c.ok)).length} clean water results ready</b><div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>Approve every result that meets all WHO and NAFDAC benchmarks. Any failing reading is left for individual review.</div></div>
+            <button className="btn p sm" onClick={() => guard('Approve all clean water results', approveAllWater)} disabled={bulkBusy}>{bulkBusy ? 'Approving...' : 'Approve all clean'}</button>
+          </div>
+        </div>
+      )}
       {loading && <p className="muted">Loading water results...</p>}
       {!loading && pending.length === 0 && <div className="placeholder">No water results awaiting LASEPA approval.</div>}
       {pending.map(w => (
@@ -3634,8 +3829,9 @@ export default function App() {
         <div className="applayout" style={{ ['--accent']: accentFor(eff) }}>
           <Sidebar tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} open={navOpen} onClose={() => setNavOpen(false)} />
           <div className="appmain">
+            <a href="#maincontent" className="skip-link">Skip to content</a>
             <AppTopBar session={session} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} onMenu={() => setNavOpen(v => !v)} />
-            {page()}
+            <div id="maincontent" tabIndex={-1}>{page()}</div>
             <Footer onPrivacy={() => setPrivacyOpen(true)} />
           </div>
         </div>
