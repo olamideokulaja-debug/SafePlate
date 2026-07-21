@@ -103,6 +103,7 @@ const STRINGS = {
     nav_review: 'Review', nav_certificates: 'Certificates', nav_analytics: 'Analytics', nav_audit: 'Audit trail',
     nav_enforcement: 'Enforcement', nav_accreditation: 'Accreditation', nav_ledger: 'Escrow ledger', nav_releases: 'Releases', nav_fund: 'Fund', nav_reconcile: 'Reconciliation',
     nav_batch: 'Batch release',
+    nav_beneficiaries: 'Beneficiaries',
     hero_eyebrow: 'Statewide, live compliance', hero_title: 'Every plate in Lagos, backed by a verified food handler.',
     hero_lede: 'SafePlate registers, tests, certifies and monitors every food handler in Lagos State, through accredited laboratories, with payments held in escrow and released only on approved results.',
     cta_register: 'Register as a food handler', cta_verify: 'Verify a certificate',
@@ -483,8 +484,17 @@ const store = {
     const db = DEMO.read(); return Object.values(db.escrow || {}).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   },
   async createRelease(rec) {
-    if (SUPABASE_READY) { await supabase.from('escrow_releases').insert(toSnake(rec)); return rec }
+    if (SUPABASE_READY) { const { error } = await supabase.from('escrow_releases').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.releases = db.releases || []; db.releases.unshift(rec); DEMO.write(db); return rec
+  },
+  async listBeneficiaries() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('beneficiaries').select('*'); return camelList(data) }
+    const db = DEMO.read(); return Object.values(db.beneficiaries || {})
+  },
+  async saveBeneficiary(id, patch) {
+    const rec = { id, ...patch, updatedAt: new Date().toISOString() }
+    if (SUPABASE_READY) { const { error } = await supabase.from('beneficiaries').upsert(toSnake(rec), { onConflict: 'id' }); if (error) throw new Error(error.message); return rec }
+    const db = DEMO.read(); db.beneficiaries = db.beneficiaries || {}; db.beneficiaries[id] = { ...(db.beneficiaries[id] || {}), ...rec }; DEMO.write(db); return rec
   },
   async listReleases() {
     if (SUPABASE_READY) { const { data } = await supabase.from('escrow_releases').select('*').order('ts', { ascending: false }); return camelList(data) }
@@ -515,7 +525,7 @@ const store = {
     const db = DEMO.read(); return Object.values(db.establishments || {})
   },
   async updateEstablishment(id, patch) {
-    if (SUPABASE_READY) { await supabase.from('establishments').update(toSnake(patch)).eq('id', id); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('establishments').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[id] = { ...(db.establishments[id] || {}), ...patch }; DEMO.write(db)
   },
   async setLabAccredited(id, val) {
@@ -579,7 +589,7 @@ const store = {
     const db = DEMO.read(); return Object.values(db.water || {}).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
   },
   async updateWaterTest(swid, patch) {
-    if (SUPABASE_READY) { await supabase.from('water_tests').update(toSnake(patch)).eq('swid', swid); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('water_tests').update(toSnake(patch)).eq('swid', swid); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.water = db.water || {}; db.water[swid] = { ...(db.water[swid] || {}), ...patch }; DEMO.write(db)
   },
   async listOfficers(agency) {
@@ -724,6 +734,53 @@ async function fetchDataUrl(url) {
 }
 
 // Build and download a Certificate of Fitness PDF.
+function generateEnforcementLetter(est, session) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth(), M = 64
+  let y = 56
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const ref = 'LASEPA/ENF/' + new Date().getFullYear() + '/' + String(Math.floor(1000 + Math.random() * 8999))
+  doc.setFont('times', 'bold'); doc.setFontSize(15); doc.setTextColor(0, 51, 0)
+  doc.text('LAGOS STATE ENVIRONMENTAL PROTECTION AGENCY', W / 2, y, { align: 'center' }); y += 18
+  doc.setFontSize(10.5); doc.setTextColor(90, 90, 90)
+  doc.text('Food & Water Safety Enforcement Directorate  ·  SafePlate Initiative', W / 2, y, { align: 'center' }); y += 26
+  doc.setDrawColor(0, 102, 0); doc.setLineWidth(1.4); doc.line(M, y, W - M, y); y += 28
+  doc.setFont('times', 'normal'); doc.setFontSize(10.5); doc.setTextColor(40, 40, 40)
+  doc.text('Ref: ' + ref, M, y); doc.text(today, W - M, y, { align: 'right' }); y += 26
+  doc.setFont('times', 'bold'); doc.text('The Proprietor / Manager', M, y); y += 15
+  doc.setFont('times', 'normal'); doc.text(est.name || 'Establishment', M, y); y += 14
+  if (est.lga) { doc.text(est.lga + ' LGA, Lagos State', M, y); y += 14 }
+  y += 14
+  doc.setFont('times', 'bold'); doc.setFontSize(11.5)
+  const subj = 'RE: ENFORCEMENT NOTICE, ' + String(est.sanction || 'Compliance action').toUpperCase()
+  doc.text(subj, M, y); y += 22
+  doc.setFont('times', 'normal'); doc.setFontSize(10.8)
+  const compliance = est.compliance || 'below the required standard'
+  const body = [
+    'Following inspection and review of your establishment under the SafePlate food and water safety programme, your current compliance status is recorded as "' + compliance + '".',
+    '',
+    'Accordingly, the Agency hereby issues the following enforcement action: ' + (est.sanction || 'a formal warning') + '. This action is taken pursuant to the NAFDAC Food Hygiene Regulations 2019 and applicable Lagos State food and public-health law.',
+    '',
+    'You are required to take immediate corrective steps to bring your establishment into full compliance, including ensuring that all food handlers hold a valid Certificate of Fitness verifiable on the SafePlate platform, and that potable-water sources are tested and certified.',
+    '',
+    'Where a fine, closure or licence action applies, it takes effect on the date of this notice unless a valid appeal is lodged. You have the right to appeal this decision within fourteen (14) days through the SafePlate platform, where the matter will be reviewed by the appropriate authority.',
+    '',
+    'Continued non-compliance may result in escalation along the enforcement ladder up to and including temporary closure and loss of operating licence.'
+  ]
+  body.forEach(para => {
+    if (para === '') { y += 8; return }
+    const lines = doc.splitTextToSize(para, W - 2 * M)
+    lines.forEach(ln => { if (y > 740) { doc.addPage(); y = 64 } doc.text(ln, M, y); y += 15 })
+  })
+  y += 20
+  doc.text('Issued for and on behalf of the Agency,', M, y); y += 34
+  doc.setFont('times', 'bold'); doc.text(session && session.name ? session.name : 'Authorised Officer', M, y); y += 14
+  doc.setFont('times', 'normal'); doc.setFontSize(9.5); doc.setTextColor(90, 90, 90)
+  doc.text('LASEPA Enforcement Officer  ·  SafePlate', M, y); y += 12
+  doc.text('This notice is system-generated and logged in the SafePlate audit trail. Ref ' + ref + '.', M, y)
+  doc.save('SafePlate-Enforcement-Notice-' + (est.name || 'establishment').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf')
+}
+
 async function generateCertPDF(cert) {
   const id = cert.safeplateId || cert.safeplate_id
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
@@ -881,7 +938,7 @@ function tabsForSession(session) {
     case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
       { id: 'home', label: t('nav_home') }, { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
-      { id: 'batch', label: t('nav_batch') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
+      { id: 'batch', label: t('nav_batch') }, { id: 'beneficiaries', label: t('nav_beneficiaries') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
       if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
@@ -1157,6 +1214,10 @@ function Styles() {
       .sidelink.on{background:var(--green-pale);color:var(--accent, var(--green));box-shadow:inset 3px 0 0 var(--accent, var(--green))}
       .sidelink.on svg{opacity:1;color:var(--accent, var(--green))}
       .appmain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:calc(100vh - 36px)}
+      #maincontent{flex:1 0 auto;display:flex;flex-direction:column}
+      .landing-shell{min-height:100vh;display:flex;flex-direction:column}
+      .landing-main{flex:1 0 auto}
+      #maincontent > .page{flex:1 0 auto}
       .appmain > .page{flex:1 0 auto}
       .apptop{display:flex;align-items:center;justify-content:flex-end;gap:10px;background:#fff;border-bottom:1px solid var(--line);border-top:3px solid var(--accent, var(--green));padding:0 22px;min-height:56px;position:sticky;top:0;z-index:30}
       .hamburger{display:none;margin-right:auto;border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;align-items:center;justify-content:center;color:var(--ink);cursor:pointer}
@@ -2587,7 +2648,7 @@ function RegulatorModule({ session, tab }) {
       {tab === 'home' && <RegulatorHome session={session} />}
       {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
-      {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} /><AppealsList agency="LASEPA" /></>}
+      {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} session={session} /><AppealsList agency="LASEPA" /></>}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
@@ -2745,14 +2806,31 @@ function SearchBar({ value, onChange, placeholder, hint }) {
 }
 const smatch = (q, ...fields) => { const ql = (q || '').trim().toLowerCase(); return !ql || fields.filter(Boolean).join(' ').toLowerCase().includes(ql) }
 
-function Enforcement({ guard, audit, agency }) {
+function Enforcement({ guard, audit, agency, session }) {
   const [ests, setEsts] = useState([])
   const [q, setQ] = useState('')
   const [officers, setOfficers] = useState([])
   async function refresh() { setEsts(await store.listEstablishments()); try { setOfficers((await store.listOfficers(agency || 'LASEPA')).filter(o => o.status === 'Active')) } catch (e) { setOfficers([]) } }
   useEffect(() => { refresh() /* eslint-disable-next-line */ }, [])
-  async function assign(e, email) { await store.updateEstablishment(e.id, { assignedTo: email || null }); await audit(email ? 'Case assigned to officer' : 'Case unassigned', e.name); toast(email ? 'Assigned to ' + ((officers.find(o => o.email === email) || {}).name || email) + '.' : 'Unassigned.'); refresh() }
-  async function escalate(e) { const idx = e.sanction ? SANCTION_LADDER.indexOf(e.sanction) : -1; const next = SANCTION_LADDER[Math.min(idx + 1, SANCTION_LADDER.length - 1)]; await store.updateEstablishment(e.id, { sanction: next, appeal: null }); await audit('Sanction escalated to ' + next, e.name); refresh() }
+async function assign(e, email) {
+    try {
+      await store.updateEstablishment(e.id, { assignedTo: email || null })
+      await audit(email ? 'Case assigned to officer' : 'Case unassigned', e.name)
+      toast(email ? 'Assigned to ' + ((officers.find(o => o.email === email) || {}).name || email) + '.' : 'Unassigned.')
+      refresh()
+    } catch (err) { toast('Could not assign the case: ' + (err.message || 'permission denied'), 'err') }
+  }
+async function escalate(e) {
+    const idx = e.sanction ? SANCTION_LADDER.indexOf(e.sanction) : -1
+    const next = SANCTION_LADDER[Math.min(idx + 1, SANCTION_LADDER.length - 1)]
+    try {
+      await store.updateEstablishment(e.id, { sanction: next, appeal: null })
+      await audit('Sanction escalated to ' + next, e.name)
+      toast('Sanction escalated to ' + next + '. Generating enforcement letter...')
+      try { generateEnforcementLetter({ ...e, sanction: next }, session) } catch (le) { /* letter is optional */ }
+      refresh()
+    } catch (err) { toast('Could not escalate the sanction: ' + (err.message || 'permission denied'), 'err') }
+  }
   async function appeal(e) { await store.updateEstablishment(e.id, { appeal: 'Under review' }); await audit('Appeal lodged and under review', e.name); refresh() }
   return (
     <div>
@@ -2764,7 +2842,7 @@ function Enforcement({ guard, audit, agency }) {
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.lga} · {e.compliance}</div></div>{e.appeal && <span className="status Sample">Appeal {e.appeal}</span>}</div>
           <div className="ladder">{SANCTION_LADDER.map(r => <span key={r} className={'rung ' + (e.sanction === r ? 'on' : '')}>{r}</span>)}</div>
           {officers.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}><span className="muted" style={{ fontSize: 12.5 }}>Assigned officer:</span><select value={e.assignedTo || ''} onChange={ev => assign(e, ev.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }}><option value="">Unassigned</option>{officers.map(o => <option key={o.id} value={o.email}>{o.name}{o.lga ? ' (' + o.lga + ')' : ''}</option>)}</select></div>}
-          <div className="row-between"><button className="btn sm danger" onClick={() => guard('Escalate sanction for ' + e.name, () => escalate(e))}>Escalate sanction</button><button className="btn sm" onClick={() => guard('Lodge appeal for ' + e.name, () => appeal(e))}>Lodge appeal</button></div>
+          <div className="row-between"><div style={{ display: 'flex', gap: 8 }}><button className="btn sm danger" onClick={() => guard('Escalate sanction for ' + e.name, () => escalate(e))}>Escalate sanction</button>{e.sanction && <button className="btn sm" onClick={() => generateEnforcementLetter(e, session)}>Generate letter</button>}</div><button className="btn sm" onClick={() => guard('Lodge appeal for ' + e.name, () => appeal(e))}>Lodge appeal</button></div>
         </div>
       ))}
     </div>
@@ -2924,6 +3002,46 @@ function AuditPanel() {
 /*  Stage 6: Sterling Bank escrow ledger                               */
 /* ------------------------------------------------------------------ */
 
+const BENEFICIARIES = [
+  { id: 'private-lab', name: 'Private Laboratory', note: 'Food test execution, 76.5% of the food fee' },
+  { id: 'lsmoh', name: 'Lagos State Ministry of Health', note: 'Oversight & regulation, 10%' },
+  { id: 'lasepa', name: 'LASEPA', note: 'Water enforcement 80% of water fee; food enforcement 3.5%' },
+  { id: 'technology', name: 'Technology Partner', note: 'Platform operations, 5%' },
+  { id: 'sterling', name: 'Sterling Bank', note: 'Financial partner & escrow, 5%' }
+]
+
+function Beneficiaries() {
+  const [rows, setRows] = useState({})
+  const [busy, setBusy] = useState('')
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { try { const list = await store.listBeneficiaries(); const map = {}; list.forEach(b => { map[b.id] = b }); setRows(map) } catch (e) { /* ignore */ } }
+  const set = (id, k, v) => setRows(r => ({ ...r, [id]: { ...(r[id] || {}), [k]: v } }))
+  async function save(b) {
+    const c = rows[b.id] || {}
+    if (c.accountNumber && !/^\d{10}$/.test(String(c.accountNumber).replace(/\s+/g, ''))) { toast('Account number must be exactly 10 digits.', 'err'); return }
+    setBusy(b.id)
+    try { await store.saveBeneficiary(b.id, { name: b.name, bankName: c.bankName || '', accountNumber: c.accountNumber || '', accountName: c.accountName || '' }); toast(b.name + ' bank details saved.') }
+    catch (e) { toast('Could not save bank details: ' + (e.message || 'permission denied'), 'err') }
+    setBusy('')
+  }
+  return (
+    <>
+      <div className="note" style={{ marginBottom: 16 }}>Bank account details for each party in the disbursement waterfall. When escrow is released, each party is paid to the account recorded here. Only Sterling Bank and regulators can see or edit these details.</div>
+      {BENEFICIARIES.map(b => { const c = rows[b.id] || {}; return (
+        <div className="ord" key={b.id}>
+          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{b.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{b.note}</div></div>{c.accountNumber && /^\d{10}$/.test(String(c.accountNumber)) ? <span className="badge" style={{ background: '#e7f4ec', color: '#0a6b39' }}>On file</span> : <span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Not set</span>}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 10, marginTop: 10 }}>
+            <div className="field" style={{ margin: 0 }}><label>Bank</label><input value={c.bankName || ''} onChange={e => set(b.id, 'bankName', e.target.value)} placeholder="e.g. Sterling Bank" /></div>
+            <div className="field" style={{ margin: 0 }}><label>Account number</label><input value={c.accountNumber || ''} onChange={e => set(b.id, 'accountNumber', e.target.value)} placeholder="10-digit NUBAN" inputMode="numeric" /></div>
+            <div className="field" style={{ margin: 0 }}><label>Account name</label><input value={c.accountName || ''} onChange={e => set(b.id, 'accountName', e.target.value)} placeholder="Registered account name" /></div>
+          </div>
+          <button className="btn p sm" style={{ marginTop: 12 }} onClick={() => save(b)} disabled={busy === b.id}>{busy === b.id ? 'Saving...' : 'Save bank details'}</button>
+        </div>
+      ) })}
+    </>
+  )
+}
+
 function SterlingModule({ session, tab }) {
   const { guard, modal } = useGuard()
   const [escrow, setEscrow] = useState([])
@@ -3058,6 +3176,8 @@ function SterlingModule({ session, tab }) {
         <div className="note" style={{ marginBottom: 16 }}>The 10% oversight line (formerly the COVID-19 Dedicated Fund, now the State Regulatory Fund) is remitted as {naira(FUND_PER_TXN)} on every released food test and {naira(WATER_FUND)} on every water test.</div>
         <div className="ord"><div className="row-between"><b style={{ fontFamily: 'Lora,serif', fontSize: 18 }}>Total remitted to date</b><span style={{ fontFamily: 'Lora,serif', fontSize: 22, color: 'var(--navy)' }}>{naira(fundRemitted)}</span></div><div className="muted" style={{ fontSize: 13, marginTop: 6 }}>Across {released.length} released transaction{released.length === 1 ? '' : 's'}: {released.filter(e => e.type !== 'WATER').length} food handler and {released.filter(e => e.type === 'WATER').length} water.</div></div>
       </>)}
+
+      {tab === 'beneficiaries' && (<><div className="tiles"><div className="tile"><div className="v">{BENEFICIARIES.length}</div><div className="k">Waterfall beneficiaries</div></div></div><h3 className="serif" style={{ fontSize: 18, margin: '4px 0 4px' }}>Beneficiary bank details</h3><Beneficiaries /></>)}
 
       {tab === 'reconcile' && (<>
         <div className="tiles">
@@ -3836,11 +3956,11 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <>
+        <div className="landing-shell">
           <Header tabs={tabs} active={mode === 'auth' ? '' : tab} onTab={onTab} onBrand={onBrand} session={session} onSignIn={() => setMode('auth')} onSignOut={signOut} lang={lang} onLang={changeLang} onPrivacy={() => setPrivacyOpen(true)} admin={isAdmin} workspace={workspace} onSwitch={switchWorkspace} />
-          {page()}
+          <div className="landing-main">{page()}</div>
           <Footer onPrivacy={() => setPrivacyOpen(true)} />
-        </>
+        </div>
       )}
       <ConsentBanner onPrivacy={() => setPrivacyOpen(true)} />
       <PrivacyModal open={privacyOpen} onClose={() => setPrivacyOpen(false)} />

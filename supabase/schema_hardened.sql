@@ -483,3 +483,17 @@ create policy lab_register on laboratories for insert to authenticated
 
 -- Officer case assignment: which officer an establishment is assigned to.
 alter table establishments add column if not exists assigned_to text;
+
+-- Waterfall beneficiary bank details (for disbursement).
+create table if not exists beneficiaries (
+  id text primary key,
+  name text, bank_name text, account_number text, account_name text,
+  updated_at timestamptz default now()
+);
+alter table beneficiaries enable row level security;
+drop policy if exists ben_read on beneficiaries;
+drop policy if exists ben_insert on beneficiaries;
+drop policy if exists ben_update on beneficiaries;
+create policy ben_read on beneficiaries for select to authenticated using (auth_role() = 'sterling' or is_regulator());
+create policy ben_insert on beneficiaries for insert to authenticated with check (auth_role() = 'sterling' or is_regulator());
+create policy ben_update on beneficiaries for update to authenticated using (auth_role() = 'sterling' or is_regulator()) with check (auth_role() = 'sterling' or is_regulator());
