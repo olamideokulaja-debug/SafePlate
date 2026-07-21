@@ -377,11 +377,20 @@ const store = {
     db.users[email] = { email, password, ...meta }; DEMO.write(db)
     return { email, ...meta }
   },
-  async signIn(email, password) {
+  async signIn(email, password, role, agency, name) {
     if (SUPABASE_READY) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw new Error(error.message)
-      const meta = data.user?.user_metadata || {}
+      let meta = data.user?.user_metadata || {}
+      // The role/agency the person signs in as must be written into the access token,
+      // otherwise the Edge Function and row-level security reject their actions as
+      // "Forbidden". This also repairs accounts created without correct metadata.
+      if (role && (meta.role !== role || (agency || null) !== (meta.agency || null))) {
+        const { data: upd, error: uerr } = await supabase.auth.updateUser({ data: { role, agency: agency || null, name: name || meta.name || email.split('@')[0] } })
+        if (uerr) throw new Error(uerr.message)
+        meta = upd.user?.user_metadata || { ...meta, role, agency: agency || null }
+        try { await supabase.auth.refreshSession() } catch (e) { /* updateUser already refreshed the token */ }
+      }
       return { id: data.user?.id, email, ...meta }
     }
     const db = DEMO.read(); const u = db.users?.[email]
@@ -1721,7 +1730,7 @@ function AuthFlow({ onDone, onBack }) {
     setErr(''); setBusy(true)
     try {
       const meta = { role: role.id, agency: ['regulator', 'officer'].includes(role.id) ? agency : null, name: name || email.split('@')[0], title: roleTitle(role.id, agency) }
-      const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password)
+      const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password, role.id, meta.agency, meta.name)
       let finalUser = { ...user, email: user.email || email, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
       if (finalUser.role === 'officer') {
         let off = await store.getOfficerByEmail(finalUser.email)
@@ -2848,7 +2857,35 @@ function EmployerTeam({ session }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
-  async function load() { setBiz(await store.getBusiness(session.email) || null) }
+  async function load() {
+    const b = await store.getBusiness(session.email) || null
+    // Reflect Ministry approvals on the employer view: refresh each enrolled
+    // member's status from their live certificate / order rather than the value
+    // frozen at enrolment.
+    if (b && Array.isArray(b.staff) && b.staff.some(x => x.safeplateId)) {
+      let changed = false
+      await Promise.all(b.staff.map(async x => {
+        if (!x.safeplateId) return
+        try {
+          const cert = await store.verifyCertificate(x.safeplateId)
+          if (cert && cert.status === 'VALID') { if (x.status !== 'Certified') { x.status = 'Certified'; changed = true } return }
+          if (cert && cert.status === 'EXPIRED') { if (x.status !== 'Expired') { x.status = 'Expired'; changed = true } return }
+          const order = await store.getOrderFor(x.safeplateId)
+          if (order) {
+            let st = x.status
+            if (order.status === 'Submitted') st = 'Awaiting Ministry review'
+            else if (order.status === 'Approved') st = 'Certified'
+            else if (order.status === 'Rejected') st = 'Referred, retest needed'
+            else if (order.status === 'Flagged') st = 'Under review'
+            else if (/Collected|Testing|Scheduled/.test(order.status || '')) st = 'In testing'
+            if (st !== x.status) { x.status = st; changed = true }
+          }
+        } catch (e) { /* ignore per-member errors */ }
+      }))
+      if (changed) { try { await store.saveBusiness(session.email, b) } catch (e) { /* ignore */ } }
+    }
+    setBiz(b)
+  }
   useEffect(() => { load() /* eslint-disable-next-line */ }, [])
 
   async function create() {
