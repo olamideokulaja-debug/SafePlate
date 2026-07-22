@@ -75,7 +75,12 @@ function loadPaystack() {
     sc.onload = () => resolve(); sc.onerror = () => reject(new Error('Could not load Paystack')); document.body.appendChild(sc)
   })
 }
-async function payWithPaystack({ email, amountNaira, reference }) {
+async function payWithPaystack({ email, amountNaira, reference } = {}) {
+  // Guard the inputs first. A bad amount here is a fault in the calling code,
+  // not a Paystack configuration problem, and it must say so plainly.
+  if (!Number.isFinite(amountNaira) || amountNaira <= 0) {
+    throw new Error('Payment amount was not set correctly (received ' + JSON.stringify(amountNaira) + '). This is an application fault, not a Paystack setting.')
+  }
   if (!PAYSTACK_READY) { await new Promise(r => setTimeout(r, 700)); return { reference: reference || ('DEMO-' + Date.now()), simulated: true } }
   await loadPaystack()
   return new Promise((resolve, reject) => {
@@ -89,7 +94,7 @@ async function payWithPaystack({ email, amountNaira, reference }) {
         reference: reference || ('SP-' + Date.now()),
         onSuccess: tx => resolve({ reference: tx.reference }),
         onCancel: () => reject(new Error('Payment window closed')),
-        onError: e => reject(new Error('Payment could not start: ' + ((e && e.message) || 'check the Paystack key and that this domain is added in your Paystack dashboard')))
+        onError: e => reject(new Error('Payment could not start: ' + ((e && e.message) || 'Paystack rejected the request. If other payments work, this is not a key or domain problem.')))
       })
     } catch (e) { reject(new Error('Payment could not start. Confirm the Paystack public key is set and this domain is allowed in Paystack.')) }
   })
@@ -669,9 +674,36 @@ const store = {
     if (SUPABASE_READY) { const { data } = await supabase.from('laboratories').select('*').eq('status', 'Pending'); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.regLabs || {}).filter(l => l.status === 'Pending')
   },
+  async nextAccNo() {
+    let used = []
+    try { used = (await store.allLabs()).map(l => l.accNo || l.acc_no).filter(Boolean) } catch (e) { used = LABS.map(l => l.accNo) }
+    let max = 0
+    used.forEach(a => { const m = String(a).match(/HEF-LAB-(\d+)/i); if (m) max = Math.max(max, parseInt(m[1], 10)) })
+    return 'HEF-LAB-' + String(max + 1).padStart(4, '0')
+  },
+  async issueAccNo(id) {
+    const accNo = await store.nextAccNo()
+    if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').update({ acc_no: accNo }).eq('id', id); if (error) throw new Error(error.message); return accNo }
+    const db = DEMO.read(); db.regLabs = db.regLabs || {}
+    if (db.regLabs[id]) db.regLabs[id].accNo = accNo
+    db.labAccNo = db.labAccNo || {}; db.labAccNo[id] = accNo
+    DEMO.write(db); return accNo
+  },
   async approveLab(id) {
-    if (SUPABASE_READY) { await supabase.from('laboratories').update({ accredited: true, status: 'Accredited' }).eq('id', id); return }
-    const db = DEMO.read(); if (db.regLabs && db.regLabs[id]) { db.regLabs[id].accredited = true; db.regLabs[id].status = 'Accredited' } db.labAccred = db.labAccred || {}; db.labAccred[id] = true; DEMO.write(db)
+    if (SUPABASE_READY) {
+      const { data: cur } = await supabase.from('laboratories').select('acc_no').eq('id', id).maybeSingle()
+      const accNo = (cur && cur.acc_no) || await store.nextAccNo()
+      const { error } = await supabase.from('laboratories').update({ accredited: true, status: 'Accredited', acc_no: accNo }).eq('id', id)
+      if (error) throw new Error(error.message)
+      return accNo
+    }
+    const db = DEMO.read()
+    db.regLabs = db.regLabs || {}
+    const existing = db.regLabs[id] && db.regLabs[id].accNo
+    const accNo = existing || await store.nextAccNo()
+    if (db.regLabs[id]) { db.regLabs[id].accredited = true; db.regLabs[id].status = 'Accredited'; db.regLabs[id].accNo = accNo }
+    db.labAccred = db.labAccred || {}; db.labAccred[id] = true; DEMO.write(db)
+    return accNo
   },
   async declineLab(id) {
     if (SUPABASE_READY) { await supabase.from('laboratories').update({ status: 'Declined', accredited: false }).eq('id', id); return }
@@ -1001,8 +1033,12 @@ const LABS = [
 ]
 
 function labsView() {
-  const db = DEMO.read(); const ov = db.labAccred || {}
-  const base = LABS.map(l => (l.id in ov ? { ...l, accredited: ov[l.id] } : l))
+  const db = DEMO.read(); const ov = db.labAccred || {}; const an = db.labAccNo || {}
+  const base = LABS.map(l => {
+    let out = (l.id in ov ? { ...l, accredited: ov[l.id] } : l)
+    if (an[l.id]) out = { ...out, accNo: an[l.id] }
+    return out
+  })
   const reg = Object.values(db.regLabs || {}).filter(l => l.status !== 'Declined')
   return [...base, ...reg]
 }
@@ -1850,9 +1886,15 @@ function useGuard() {
   async function confirm() {
     if (!otp6(otp)) return
     const p = pending; setPending(null)
-    await p.run()
-    setToast(p.label + ' completed and written to the audit trail.')
-    setTimeout(() => setToast(''), 3500)
+    // The action must be able to fail loudly. Without this, a rejected promise
+    // escaped here and the click appeared to do nothing at all.
+    try {
+      await p.run()
+      setToast(p.label + ' completed and written to the audit trail.')
+    } catch (e) {
+      setToast('Could not complete: ' + ((e && e.message) || 'the server refused this action.'))
+    }
+    setTimeout(() => setToast(''), 6000)
   }
   const modal = (
     <>
@@ -2571,7 +2613,7 @@ function LaboratoryModule({ session }) {
         <span className="muted" style={{ fontSize: 13 }}>Viewing queue for:</span>
         <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <select value={labName} onChange={e => setLabName(e.target.value)} style={{ padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 9, fontFamily: 'inherit', fontSize: 14 }}>{accreditedLabs.map(l => <option key={l.id}>{l.name}</option>)}</select>
-          <span className="muted" style={{ fontSize: 12.5 }}>Accreditation {lab.accNo}</span>
+          <span className="muted" style={{ fontSize: 12.5 }}>{lab && (lab.accNo || lab.acc_no) ? 'Accreditation ' + (lab.accNo || lab.acc_no) : 'Accreditation number pending'}</span>
         </span>
       </div>
       <div className="note" style={{ marginBottom: 18 }}>You see only this laboratory's orders. Results are encrypted at rest (AES-256) in the connected build, and payment is released only after Ministry approval, not on upload.</div>
@@ -3117,9 +3159,12 @@ function LSMoHReview({ session, guard, audit }) {
     const clean = orders.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer'))
     if (!clean.length) { toast('No clean, readable results are ready to approve.', 'warn'); return }
     setBulkBusy(true)
-    for (const o of clean) { try { await approve(o) } catch (e) { /* skip failures */ } }
+    let ok = 0; let lastErr = ''
+    for (const o of clean) { try { await approve(o); ok++ } catch (e) { lastErr = (e && e.message) || 'server refused' } }
     setBulkBusy(false)
-    toast('Bulk approval complete: ' + clean.length + ' certificate' + (clean.length === 1 ? '' : 's') + ' issued.')
+    if (ok === 0) toast('No results could be approved: ' + (lastErr || 'the server refused this action.'), 'err')
+    else if (ok < clean.length) toast('Approved ' + ok + ' of ' + clean.length + '. The rest failed: ' + lastErr, 'warn')
+    else toast('Bulk approval complete: ' + ok + ' certificate' + (ok === 1 ? '' : 's') + ' issued.')
   }
   async function approve(o) {
     if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); toast('Result approved, certificate issued.'); refresh(); return }
@@ -3608,15 +3653,21 @@ function Accreditation({ guard, audit, session }) {
     setSummaries(map)
   }
   function auditOf(l) { return summaries[l.id] || null }
+  async function issueNumber(l) {
+    const accNo = await store.issueAccNo(l.id)
+    await audit('Accreditation number ' + accNo + ' issued to ' + l.name, l.name)
+    toast(l.name + ' issued accreditation number ' + accNo + '.')
+    refreshLabs()
+  }
   function auditPassed(l) { const a = auditOf(l); return !!a && ['Accredited', 'Provisional'].includes(a.outcome) }
   useEffect(() => { refreshLabs() /* eslint-disable-next-line */ }, [])
   async function toggle(l) { await store.setLabAccredited(l.id, !l.accredited); await audit((l.accredited ? 'Accreditation suspended for ' : 'Accreditation granted for ') + l.name, l.name); refreshLabs() }
   async function approveReg(l) {
     if (!auditPassed(l)) { toast('Run the QA audit first. A laboratory can only be accredited once it meets the criteria.', 'err'); return }
     const a = auditOf(l)
-    await store.approveLab(l.id)
-    await audit('Laboratory accreditation approved for ' + l.name + ' (QA audit ' + a.score + '%, ' + a.outcome + ')', l.name)
-    toast(l.name + ' accredited. It can now receive samples.'); refreshLabs()
+    const accNo = await store.approveLab(l.id)
+    await audit('Laboratory accreditation approved for ' + l.name + ' (QA audit ' + a.score + '%, ' + a.outcome + '), accreditation number ' + accNo, l.name)
+    toast(l.name + ' accredited as ' + accNo + '. It can now receive samples.'); refreshLabs()
   }
   async function declineReg(l) { await store.declineLab(l.id); await audit('Laboratory registration declined for ' + l.name, l.name); toast(l.name + ' registration declined.', 'warn'); refreshLabs() }
   async function onAuditDone(rec, g) {
@@ -3663,12 +3714,18 @@ function Accreditation({ guard, audit, session }) {
       {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).length === 0 && <div className="placeholder">No laboratories match your search.</div>}
       {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).map(l => (
         <div className="ord" key={l.id}>
-          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{l.area} · {l.accNo || 'no accreditation number'}</div></div><span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span></div>
+          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{l.area} · {l.accNo || l.acc_no || (l.accredited ? 'accreditation number not issued' : 'not yet accredited')}</div></div><span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span></div>
           {auditOf(l) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', flexWrap: 'wrap' }}>
               <span className={'pill ' + (auditPassed(l) ? 'ok' : 'no')}>QA audit {auditOf(l).score}% · {auditOf(l).outcome}</span>
               <span className="muted" style={{ fontSize: 12 }}>{timeAgo(auditOf(l).ts)}</span>
               <button className="btn sm" onClick={() => generateQaReportPDF(auditOf(l), l)}>Audit report</button>
+            </div>
+          )}
+          {l.accredited && !(l.accNo || l.acc_no) && (
+            <div className="note" style={{ marginBottom: 10, borderColor: 'var(--gold)', background: '#fdf8ee', fontSize: 13 }}>
+              This laboratory was accredited without an accreditation number.
+              <button className="btn sm" style={{ marginLeft: 10 }} onClick={() => guard('Issue an accreditation number to ' + l.name, () => issueNumber(l))}>Issue accreditation number</button>
             </div>
           )}
           <div className="row-between" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -4064,6 +4121,7 @@ function EmployerTeam({ session }) {
   const [lga, setLga] = useState('')
   const [sName, setSName] = useState('')
   const [sPhone, setSPhone] = useState('')
+  const [msgErr, setMsgErr] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -4105,17 +4163,17 @@ function EmployerTeam({ session }) {
   }
   async function addStaff() {
     if (!sName.trim() || !sPhone.trim()) return
-    if (!/^0\d{10}$/.test(sPhone.replace(/\s+/g, ''))) { setMsg('Enter a valid 11-digit phone number for the staff member, e.g. 08031234567.'); return }
+    if (!/^0\d{10}$/.test(sPhone.replace(/\s+/g, ''))) { setMsgErr(true); setMsg('Enter a valid 11-digit phone number for the staff member, e.g. 08031234567.'); return }
     const b = { ...biz, staff: [...biz.staff, { id: 'S' + Date.now(), name: sName.trim(), phone: sPhone.trim(), status: 'Not registered' }] }
     await store.saveBusiness(session.email, b); setBiz(b); setSName(''); setSPhone('')
   }
   async function bulkPay() {
-    setBusy(true); setMsg('')
+    setBusy(true); setMsg(''); setMsgErr(false)
     const pending = biz.staff.filter(x => x.status === 'Not registered')
-    if (!pending.length) { setMsg('No unregistered staff to enrol.'); setBusy(false); return }
+    if (!pending.length) { setMsgErr(true); setMsg('No unregistered staff to enrol.'); setBusy(false); return }
     try {
       if (SUPABASE_READY) {
-        if (PAYSTACK_READY) { await payWithPaystack(session.email, pending.length * FEE, 'EMP-' + Date.now()) }
+        if (PAYSTACK_READY) { await payWithPaystack({ email: session.email, amountNaira: pending.length * FEE, reference: 'EMP-' + Date.now() }) }
         const res = await store.fn('bulk-enroll', { staff: pending.map(x => ({ name: x.name, phone: x.phone })), lab: 'Lancet Ikeja', employer: session.email })
         const created = (res && res.created) || []
         created.forEach(c => { const m = biz.staff.find(x => x.status === 'Not registered' && x.name === c.name && x.phone === c.phone); if (m) { m.safeplateId = c.safeplateId; m.status = 'Pending results' } })
@@ -4128,10 +4186,10 @@ function EmployerTeam({ session }) {
         }
       }
       const b = { ...biz }; await store.saveBusiness(session.email, b); setBiz(b)
-      setMsg('Enrolled and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
+      setMsgErr(false); setMsg('Enrolled and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
       toast('Enrolled ' + pending.length + ' staff into testing.')
     } catch (e) {
-      setMsg('Could not complete enrolment: ' + (e.message || 'please try again.'))
+      setMsgErr(true); setMsg('Could not complete enrolment: ' + (e.message || 'please try again.'))
       toast('Enrolment could not complete.', 'err')
     }
     setBusy(false)
@@ -4139,7 +4197,7 @@ function EmployerTeam({ session }) {
   async function bulkAddCsv(file) {
     setMsg('')
     let text = ''
-    try { text = await file.text() } catch (e) { setMsg('Could not read that file.'); return }
+    try { text = await file.text() } catch (e) { setMsgErr(true); setMsg('Could not read that file.'); return }
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
     const rows = []
     for (const line of lines) {
@@ -4148,10 +4206,10 @@ function EmployerTeam({ session }) {
       if (/^(full ?)?name$/i.test(parts[0])) continue
       rows.push({ id: 'S' + Date.now() + Math.floor(Math.random() * 100000), name: parts[0], phone: parts[1], email: parts[2] || '', status: 'Not registered' })
     }
-    if (!rows.length) { setMsg('No valid rows found. Use columns: name, phone, email (optional).'); return }
+    if (!rows.length) { setMsgErr(true); setMsg('No valid rows found. Use columns: name, phone, email (optional).'); return }
     const b = { ...biz, staff: [...biz.staff, ...rows] }
     await store.saveBusiness(session.email, b); setBiz(b)
-    setMsg('Added ' + rows.length + ' staff from file. Use Register and bulk-pay below to enrol them.')
+    setMsgErr(false); setMsg('Added ' + rows.length + ' staff from file. Use Register and bulk-pay below to enrol them.')
   }
   function downloadTemplate() {
     const csv = 'name,phone,email\nAdaeze Nwosu,08031110001,ada@example.com\nBode Adekunle,08031110002,\n'
@@ -4190,7 +4248,7 @@ function EmployerTeam({ session }) {
       <div className="note" style={{ marginBottom: 18 }}>You see each member's compliance status only, never their medical results. A compliance digest is emailed weekly.</div>
       <Insights session={session} />
 
-      {msg && <div className="note" style={{ background: 'var(--green-pale)', borderColor: '#bcdcbc', marginBottom: 16 }}>{msg}</div>}
+      {msg && <div className="note" style={{ background: msgErr ? '#fdeeee' : 'var(--green-pale)', borderColor: msgErr ? '#e6b5b0' : '#bcdcbc', marginBottom: 16 }}>{msg}</div>}
 
       <div className="card" style={{ marginBottom: 18 }}>
         <h3 className="serif" style={{ margin: '0 0 12px', fontSize: 18 }}>Add a team member</h3>
@@ -4332,7 +4390,11 @@ function WaterReview({ session, guard, audit }) {
   useEffect(() => { refresh() }, [])
 
   async function approve(w) {
-    if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'approve' }); toast('Water result approved, certificate issued.'); refresh(); return }
+    if (SUPABASE_READY) {
+      try { await store.fn('approve-water', { swid: w.swid, decision: 'approve' }); toast('Water result approved, certificate issued.'); refresh() }
+      catch (e) { toast('Could not approve this water result: ' + (e.message || 'please try again.'), 'err'); throw e }
+      return
+    }
     const now = Date.now(), day = 86400000
     const series = makeWaterCertSeries()
     await store.issueCertificate({ safeplateId: w.swid, name: w.facility, panel: 'Potable water quality', lab: w.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', series })
@@ -4345,14 +4407,17 @@ function WaterReview({ session, guard, audit }) {
     toast('Water result approved, certificate issued.')
     refresh()
   }
-  async function flag(w) { if (SUPABASE_READY) { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); toast('Water result flagged, retest required.', 'warn'); refresh(); return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); toast('Water result flagged, retest required.', 'warn'); refresh() }
+  async function flag(w) { if (SUPABASE_READY) { try { await store.fn('approve-water', { swid: w.swid, decision: 'flag' }); toast('Water result flagged, retest required.', 'warn'); refresh() } catch (e) { toast('Could not flag this water result: ' + (e.message || 'please try again.'), 'err'); throw e } return } await store.updateWaterTest(w.swid, { status: 'Flagged, retest required' }); await audit('Water result flagged, retest required', w.swid); toast('Water result flagged, retest required.', 'warn'); refresh() }
   async function approveAllWater() {
     const clean = tests.filter(w => w.status === 'Submitted, pending LASEPA' && waterChecks(w.results).every(c => c.ok))
     if (!clean.length) { toast('No clean water results are ready to approve.', 'warn'); return }
     setBulkBusy(true)
-    for (const w of clean) { try { await approve(w) } catch (e) { /* skip */ } }
+    let ok = 0; let lastErr = ''
+    for (const w of clean) { try { await approve(w); ok++ } catch (e) { lastErr = (e && e.message) || 'server refused' } }
     setBulkBusy(false)
-    toast('Bulk approval complete: ' + clean.length + ' water certificate' + (clean.length === 1 ? '' : 's') + ' issued.')
+    if (ok === 0) toast('No water results could be approved: ' + (lastErr || 'the server refused this action.'), 'err')
+    else if (ok < clean.length) toast('Approved ' + ok + ' of ' + clean.length + '. The rest failed: ' + lastErr, 'warn')
+    else toast('Bulk approval complete: ' + ok + ' water certificate' + (ok === 1 ? '' : 's') + ' issued.')
   }
 
   const pending = tests.filter(w => w.status === 'Submitted, pending LASEPA')

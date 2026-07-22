@@ -563,3 +563,7 @@ create policy labaud_insert on lab_audits for insert to authenticated
 alter table laboratories add column if not exists last_audit_score numeric;
 alter table laboratories add column if not exists last_audit_at timestamptz;
 alter table laboratories add column if not exists last_audit_outcome text;
+
+-- Accreditation number, issued by HEFAMAA when a laboratory is accredited.
+alter table laboratories add column if not exists acc_no text;
+create unique index if not exists laboratories_accno_uk on laboratories (acc_no) where acc_no is not null;
