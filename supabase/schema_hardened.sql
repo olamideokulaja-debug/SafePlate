@@ -502,3 +502,42 @@ create policy ben_update on beneficiaries for update to authenticated using (aut
 alter table laboratories add column if not exists bank_name text;
 alter table laboratories add column if not exists account_number text;
 alter table laboratories add column if not exists account_name text;
+
+-- Payment receipt details on the handler record.
+alter table food_handlers add column if not exists payment_ref text;
+alter table food_handlers add column if not exists paid_at timestamptz;
+alter table food_handlers add column if not exists paid_amount integer;
+
+-- Public complaints (anonymous). Intelligence only: a complaint schedules a
+-- look, it never applies a sanction.
+create table if not exists complaints (
+  id text primary key,
+  establishment text, lga text, detail text, status text default 'Open',
+  triaged_by text, triaged_at timestamptz, outcome text,
+  created_at timestamptz default now()
+);
+alter table complaints enable row level security;
+drop policy if exists cmp_read on complaints;
+drop policy if exists cmp_update on complaints;
+create policy cmp_read on complaints for select to authenticated using (is_regulator() or is_officer());
+create policy cmp_update on complaints for update to authenticated using (is_regulator() or is_officer()) with check (is_regulator() or is_officer());
+
+-- Internal "complaint received, under review" marker. Not a public downgrade.
+alter table establishments add column if not exists under_review boolean default false;
+alter table inspections add column if not exists status text;
+
+-- Establishment registration: businesses may self-register, but a
+-- self-registered premises stays Unverified until an officer inspects it.
+alter table establishments add column if not exists verified boolean default true;
+alter table establishments add column if not exists registered_by text;
+alter table establishments add column if not exists created_at timestamptz default now();
+drop policy if exists est_insert on establishments;
+create policy est_insert on establishments for insert to authenticated
+  with check (is_regulator() or is_officer() or auth_role() = 'employer');
+drop policy if exists est_self_select on establishments;
+create policy est_self_select on establishments for select to authenticated
+  using (registered_by = auth.jwt() ->> 'email');
+
+-- 48-hour laboratory turnaround breach markers.
+alter table test_orders add column if not exists sla_breached boolean default false;
+alter table test_orders add column if not exists sla_breached_at timestamptz;

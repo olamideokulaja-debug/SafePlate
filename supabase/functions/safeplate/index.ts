@@ -45,6 +45,19 @@ async function decrypt(p: string) { const [i, c] = p.split(':'); const pt = awai
 async function sha256(s: string) { const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('') }
 
 const FEE = 15000
+
+// Send a status update to a food handler. Built ready: it becomes live the
+// moment TERMII_API_KEY is set. Until then the notification is still logged.
+async function tellHandler(db: any, safeplateId: string, message: string) {
+  try {
+    const { data: fh } = await db.from('food_handlers').select('phone, name').eq('safeplate_id', safeplateId).maybeSingle()
+    await db.from('notifications').insert({ audience: 'all', title: 'Status update', body: safeplateId + ': ' + message })
+    const key = Deno.env.get('TERMII_API_KEY')
+    if (fh && fh.phone && key) {
+      await fetch('https://api.ng.termii.com/api/sms/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to: fh.phone, from: Deno.env.get('TERMII_SENDER_ID') || 'SafePlate', sms: 'SafePlate: ' + message + ' (' + safeplateId + ')', type: 'plain', channel: 'generic', api_key: key }) })
+    }
+  } catch (e) { /* status updates must never block the workflow */ }
+}
 // TEMPORARY: while Termii SMS is being fixed, skip the login OTP so staff can sign in.
 // Set this back to false to restore real 2FA once SMS works.
 const OTP_BYPASS = true
@@ -52,11 +65,58 @@ const OTP_BYPASS = true
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  const me = await caller(req)
-  if (!me) return json({ error: 'Unauthorized' }, 401)
   const body = await req.json().catch(() => ({}))
   const action = body.action
   const db = svc()
+
+  // ---- Public actions (no sign-in required) ----------------------------------
+  // Deliberately limited: they never reveal test results or personal records
+  // beyond what the requester already proves they know.
+  try {
+    // Recover a forgotten SAFEPLATE ID. Requires BOTH phone and NIN so that
+    // knowing a phone number alone is not enough to identify someone.
+    if (action === 'recover-id') {
+      const phone = String(body.phone || '').replace(/\s+/g, '')
+      const nin = String(body.nin || '').replace(/\s+/g, '')
+      if (!/^0\d{10}$/.test(phone) || !/^\d{11}$/.test(nin)) return json({ error: 'Enter your 11-digit phone number and 11-digit NIN.' }, 400)
+      const { data: fh } = await db.from('food_handlers').select('safeplate_id, name').eq('phone', phone).eq('nin', nin).maybeSingle()
+      if (!fh) return json({ error: 'No record matches that phone number and NIN.' }, 404)
+      await db.from('audit_log').insert({ actor: 'public', role: 'public', action: 'SAFEPLATE ID recovered', subject: fh.safeplate_id })
+      return json({ ok: true, safeplateId: fh.safeplate_id, name: fh.name })
+    }
+
+    // Anonymous public complaint about an establishment. Intelligence only:
+    // it opens a triage case and schedules an inspection, and never applies a
+    // sanction, because an anonymous report cannot be tested for truth.
+    if (action === 'file-complaint') {
+      const est = String(body.establishment || '').trim()
+      const detail = String(body.detail || '').trim()
+      const lga = String(body.lga || '').trim()
+      if (est.length < 3) return json({ error: 'Enter the name of the establishment.' }, 400)
+      if (detail.length < 20) return json({ error: 'Please describe what you saw, in at least 20 characters.' }, 400)
+      // Light rate limit: cap complaints about one establishment per hour.
+      const since = new Date(Date.now() - 3600000).toISOString()
+      const { data: recent } = await db.from('complaints').select('id').eq('establishment', est).gte('created_at', since)
+      if ((recent || []).length >= 5) return json({ error: 'Several reports about this establishment are already under review. Thank you.' }, 429)
+      const ref = 'CMP-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 899999))
+      await db.from('complaints').insert({ id: ref, establishment: est, lga, detail, status: 'Open', created_at: new Date().toISOString() })
+      // Mark the establishment as under review (internal marker, not a sanction)
+      // and schedule an inspection for an officer to pick up.
+      const { data: match } = await db.from('establishments').select('id').ilike('name', est).maybeSingle()
+      if (match) {
+        await db.from('establishments').update({ under_review: true }).eq('id', match.id)
+        await db.from('inspections').insert({ id: 'INS-' + Date.now(), agency: 'LASEPA', kind: 'Complaint follow-up', subject: est, note: 'Scheduled from public complaint ' + ref, status: 'Scheduled', target_id: match.id })
+      }
+      await db.from('audit_log').insert({ actor: 'anonymous', role: 'public', action: 'Public complaint filed, inspection scheduled', subject: ref })
+      await db.from('notifications').insert({ audience: 'LASEPA', title: 'New public complaint', body: est + ' (' + ref + ')' })
+      return json({ ok: true, reference: ref })
+    }
+  } catch (e) {
+    return json({ error: String((e as Error).message || e) }, 500)
+  }
+
+  const me = await caller(req)
+  if (!me) return json({ error: 'Unauthorized' }, 401)
 
   try {
     // ---- Laboratory submits encrypted results ----
@@ -94,6 +154,7 @@ Deno.serve(async (req) => {
         await db.from('test_orders').update({ status: 'Rejected' }).eq('id', body.orderId)
         await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Result rejected, referral pathway, escrow held', subject: order.safeplate_id })
         await db.from('notifications').insert({ audience: 'all', title: 'Result referred', body: order.handler_name + ' must retest' })
+        await tellHandler(db, order.safeplate_id, 'your result has been referred by the Ministry and a retest is required. You may lodge an appeal in the app.')
         return json({ ok: true, status: 'Rejected' })
       }
       const { data: lsh } = await db.rpc('next_lsh')
@@ -104,6 +165,7 @@ Deno.serve(async (req) => {
       await db.from('test_orders').update({ status: 'Approved' }).eq('id', body.orderId)
       await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Approved, certificate ' + lsh + ' issued, escrow release instructed', subject: order.safeplate_id })
       await db.from('notifications').insert([{ audience: 'sterling', title: 'Escrow release instructed', body: order.safeplate_id }, { audience: 'all', title: 'Certificate issued', body: order.handler_name + ' is now certified' }])
+      await tellHandler(db, order.safeplate_id, 'your Certificate of Fitness has been approved and is ready. Certificate number ' + lsh + '.')
       // Email the certificate link to the handler (optional; needs RESEND_API_KEY).
       try {
         const resendKey = Deno.env.get('RESEND_API_KEY')
@@ -161,6 +223,13 @@ Deno.serve(async (req) => {
       if (me.lab && order.lab !== me.lab) return json({ error: 'Not your order' }, 403)
       await db.from('test_orders').update({ status: body.status }).eq('id', body.orderId)
       await db.from('audit_log').insert({ actor: me.email, role: 'laboratory', action: 'Sample updated to ' + body.status, subject: order.safeplate_id })
+      const msg: Record<string, string> = {
+        'Sample Collected': 'your sample has been collected. Results are expected within 48 hours.',
+        'Testing in Progress': 'testing of your sample has started.',
+        'No Show': 'you missed your sample appointment. Please contact your laboratory to rebook.',
+        'Spoiled sample': 'your sample could not be used and must be recollected. Please return to your laboratory.'
+      }
+      if (msg[body.status]) await tellHandler(db, order.safeplate_id, msg[body.status])
       return json({ ok: true, status: body.status })
     }
 
@@ -232,6 +301,30 @@ Deno.serve(async (req) => {
       }
       await db.from('audit_log').insert({ actor: 'system', role: 'system', action: 'Expiry reminders processed: ' + due + ' due, ' + sent + ' SMS sent', subject: '' })
       return json({ ok: true, due, sent })
+    }
+
+    // ---- 48-hour laboratory SLA sweep ----
+    // Run on the same daily schedule as the reminders. Notifies the Ministry,
+    // raises the order on their home queue, and alerts the laboratory.
+    if (action === 'check-sla') {
+      const cutoff = new Date(Date.now() - 48 * 3600000).toISOString()
+      const { data: late } = await db.from('test_orders')
+        .select('id, safeplate_id, handler_name, lab, status, created_at, sla_breached')
+        .in('status', ['Scheduled', 'Sample Collected', 'Testing in Progress'])
+        .lt('created_at', cutoff)
+      let flagged = 0
+      for (const o of (late || [])) {
+        if (o.sla_breached) continue
+        await db.from('test_orders').update({ sla_breached: true, sla_breached_at: new Date().toISOString() }).eq('id', o.id)
+        await db.from('notifications').insert([
+          { audience: 'LSMoH', title: '48-hour SLA breached', body: (o.lab || 'A laboratory') + ' has held ' + o.safeplate_id + ' beyond 48 hours' },
+          { audience: 'laboratory', title: 'Overdue sample', body: o.safeplate_id + ' has passed the 48-hour turnaround. Submit the result.' }
+        ])
+        await db.from('audit_log').insert({ actor: 'system', role: 'system', action: '48-hour SLA breached, escalated to LSMoH and laboratory alerted', subject: o.safeplate_id })
+        await tellHandler(db, o.safeplate_id, 'your result is taking longer than the 48-hour target. The Ministry has been notified and is following it up.')
+        flagged++
+      }
+      return json({ ok: true, checked: (late || []).length, flagged })
     }
 
     // ---- Send a 2FA OTP over Termii ----

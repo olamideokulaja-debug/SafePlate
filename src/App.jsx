@@ -18,6 +18,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@supabase/supabase-js'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
+import jsQR from 'jsqr'
 
 /* ------------------------------------------------------------------ */
 /*  Configuration and backend abstraction                              */
@@ -268,6 +269,39 @@ const DEMO = {
   write(data) { try { localStorage.setItem(this.key, JSON.stringify(data)) } catch { /* ignore */ } }
 }
 
+/* --------------------------------------------------------------------------
+   Offline support for field officers.
+
+   Lagos field connectivity is unreliable, so an officer must be able to finish
+   an inspection with no signal. Two pieces: a CACHE of the records they are
+   likely to need (their assigned cases and a slice of the certificate
+   register), and a QUEUE of actions taken while offline, replayed on
+   reconnect. The cache is a working set, not the whole database, so a fully
+   offline officer can check handlers that were cached, not any arbitrary ID.
+   Where two officers edit the same record offline, the later sync wins.
+-------------------------------------------------------------------------- */
+const OFFLINE = {
+  qKey: 'safeplate:outbox',
+  cKey: 'safeplate:cache',
+  isOffline() { return typeof navigator !== 'undefined' && navigator.onLine === false },
+  queue() { try { return JSON.parse(localStorage.getItem(this.qKey)) || [] } catch { return [] } },
+  setQueue(q) { try { localStorage.setItem(this.qKey, JSON.stringify(q)) } catch { /* ignore */ } },
+  enqueue(op) { const q = this.queue(); q.push({ ...op, queuedAt: new Date().toISOString(), opId: 'OP-' + Date.now() + '-' + Math.floor(Math.random() * 1000) }); this.setQueue(q); return q.length },
+  cache() { try { return JSON.parse(localStorage.getItem(this.cKey)) || {} } catch { return {} } },
+  put(key, value) { const c = this.cache(); c[key] = { value, at: Date.now() }; try { localStorage.setItem(this.cKey, JSON.stringify(c)) } catch { /* quota */ } },
+  get(key) { const c = this.cache(); return c[key] ? c[key].value : null },
+  async flush(runner) {
+    const q = this.queue()
+    if (!q.length) return { sent: 0, failed: 0 }
+    const left = []; let sent = 0, failed = 0
+    for (const op of q) {
+      try { await runner(op); sent++ } catch (e) { failed++; left.push(op) }
+    }
+    this.setQueue(left)
+    return { sent, failed }
+  }
+}
+
 function seedDemo() {
   const data = DEMO.read()
   if (data.seedV3) return
@@ -459,6 +493,10 @@ const store = {
   },
   async verifyCertificate(id) {
     const clean = (id || '').trim().toUpperCase()
+    if (OFFLINE.isOffline()) {
+      const cached = OFFLINE.get('certs') || {}
+      return cached[clean] ? { ...normaliseCert(cached[clean]), fromCache: true } : null
+    }
     if (SUPABASE_READY) { const { data } = await supabase.from('certificates').select('*').eq('safeplate_id', clean).limit(1); const c = data && data[0]; return c ? normaliseCert(toCamel(c)) : null }
     const db = DEMO.read(); const cert = db.certificates?.[clean]; return cert ? normaliseCert(cert) : null
   },
@@ -486,6 +524,63 @@ const store = {
   async createRelease(rec) {
     if (SUPABASE_READY) { const { error } = await supabase.from('escrow_releases').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.releases = db.releases || []; db.releases.unshift(rec); DEMO.write(db); return rec
+  },
+  async recoverId(phone, nin) {
+    const ph = String(phone || '').replace(/\s+/g, ''), nn = String(nin || '').replace(/\s+/g, '')
+    if (SUPABASE_READY) { const out = await store.fn('recover-id', { phone: ph, nin: nn }); return out }
+    const db = DEMO.read()
+    const hit = Object.values(db.handlers || {}).find(h => String(h.phone || '').replace(/\s+/g, '') === ph && String(h.nin || '').replace(/\s+/g, '') === nn)
+    if (!hit) throw new Error('No record matches that phone number and NIN.')
+    return { ok: true, safeplateId: hit.safeplateId, name: hit.name }
+  },
+  async fileComplaint(c) {
+    if (SUPABASE_READY) { return await store.fn('file-complaint', c) }
+    const db = DEMO.read(); db.complaints = db.complaints || {}
+    const ref = 'CMP-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 899999))
+    db.complaints[ref] = { id: ref, establishment: c.establishment, lga: c.lga || '', detail: c.detail, status: 'Open', createdAt: new Date().toISOString() }
+    const est = Object.values(db.establishments || {}).find(e => (e.name || '').toLowerCase() === (c.establishment || '').toLowerCase())
+    if (est) { db.establishments[est.id] = { ...est, underReview: true } }
+    DEMO.write(db)
+    await store.notify('LASEPA', 'New public complaint', c.establishment + ' (' + ref + ')')
+    return { ok: true, reference: ref }
+  },
+  async listComplaints() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('complaints').select('*').order('created_at', { ascending: false }); return camelList(data) }
+    const db = DEMO.read(); return Object.values(db.complaints || {})
+  },
+  async triageComplaint(id, patch) {
+    if (SUPABASE_READY) { const { error } = await supabase.from('complaints').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return }
+    const db = DEMO.read(); db.complaints = db.complaints || {}; db.complaints[id] = { ...(db.complaints[id] || {}), ...patch }; DEMO.write(db)
+  },
+  async warmOfflineCache(session) {
+    try {
+      const ests = await store.listEstablishments()
+      OFFLINE.put('establishments', ests)
+      const certs = await store.listAllCertificates()
+      const map = {}
+      // Cache a bounded slice: the officer's own area first, then most recent.
+      const mine = ests.filter(e => e.assignedTo === session.email).map(e => e.lga)
+      const sorted = certs.slice().sort((a, b) => (mine.includes(b.lga) ? 1 : 0) - (mine.includes(a.lga) ? 1 : 0))
+      sorted.slice(0, 600).forEach(c => { const k = (c.safeplateId || c.safeplate_id || '').toUpperCase(); if (k) map[k] = c })
+      OFFLINE.put('certs', map)
+      OFFLINE.put('warmedAt', new Date().toISOString())
+      return { establishments: ests.length, certificates: Object.keys(map).length }
+    } catch (e) { return null }
+  },
+  async syncOutbox() {
+    return await OFFLINE.flush(async op => {
+      if (op.kind === 'inspection') {
+        if (SUPABASE_READY) { const { error } = await supabase.from('inspections').insert(toSnake(op.rec)); if (error) throw new Error(error.message) }
+        else { const db = DEMO.read(); db.inspections = db.inspections || []; db.inspections.push(op.rec); DEMO.write(db) }
+        return
+      }
+      if (op.kind === 'establishment') {
+        if (SUPABASE_READY) { const { error } = await supabase.from('establishments').update(toSnake(op.patch)).eq('id', op.id); if (error) throw new Error(error.message) }
+        else { const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[op.id] = { ...(db.establishments[op.id] || {}), ...op.patch }; DEMO.write(db) }
+        return
+      }
+      throw new Error('Unknown queued action')
+    })
   },
   async listBeneficiaries() {
     if (SUPABASE_READY) { const { data } = await supabase.from('beneficiaries').select('*'); return camelList(data) }
@@ -521,10 +616,18 @@ const store = {
     const db = DEMO.read(); return db.audit || []
   },
   async listEstablishments() {
+    if (OFFLINE.isOffline()) { return OFFLINE.get('establishments') || [] }
     if (SUPABASE_READY) { const { data } = await supabase.from('establishments').select('*'); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.establishments || {})
   },
+  async createEstablishment(rec) {
+    const id = rec.id || ('EST-' + Date.now())
+    const full = { id, name: rec.name, lga: rec.lga || '', compliance: rec.compliance || 'Not yet inspected', sanction: null, verified: rec.verified === true, registeredBy: rec.registeredBy || '', createdAt: new Date().toISOString() }
+    if (SUPABASE_READY) { const { error } = await supabase.from('establishments').upsert(toSnake(full), { onConflict: 'id' }); if (error) throw new Error(error.message); return full }
+    const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[id] = full; DEMO.write(db); return full
+  },
   async updateEstablishment(id, patch) {
+    if (OFFLINE.isOffline()) { OFFLINE.enqueue({ kind: 'establishment', id, patch }); return }
     if (SUPABASE_READY) { const { error } = await supabase.from('establishments').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[id] = { ...(db.establishments[id] || {}), ...patch }; DEMO.write(db)
   },
@@ -622,7 +725,8 @@ const store = {
   },
   async createInspection(i) {
     const rec = { id: 'INS-' + Date.now() + Math.floor(Math.random() * 1000), ts: new Date().toISOString(), ...i }
-    if (SUPABASE_READY) { await supabase.from('inspections').insert(toSnake(rec)); return rec }
+    if (OFFLINE.isOffline()) { OFFLINE.enqueue({ kind: 'inspection', rec }); return { ...rec, pendingSync: true } }
+    if (SUPABASE_READY) { const { error } = await supabase.from('inspections').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.inspections = db.inspections || []; db.inspections.push(rec); DEMO.write(db); return rec
   },
   async listInspections(agency, officerEmail) {
@@ -784,6 +888,47 @@ function generateEnforcementLetter(est, session) {
   doc.save('SafePlate-Enforcement-Notice-' + (est.name || 'establishment').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf')
 }
 
+function generateReceiptPDF(rec) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth(), M = 60
+  let y = 58
+  const legs = rec.type === 'WATER' ? WATER_WATERFALL : WATERFALL
+  const amount = rec.amount || (rec.type === 'WATER' ? WATER_FEE : FEE)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0, 102, 0)
+  doc.text('SAFEPLATE', M, y)
+  doc.setFontSize(10); doc.setTextColor(90, 90, 90); doc.setFont('helvetica', 'normal')
+  doc.text('Lagos State food and water safety programme', M, y + 15)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(0, 51, 102)
+  doc.text('PAYMENT RECEIPT', W - M, y, { align: 'right' })
+  y += 40
+  doc.setDrawColor(0, 102, 0); doc.setLineWidth(1.2); doc.line(M, y, W - M, y); y += 26
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(40, 40, 40)
+  const row = (k, v) => { doc.setTextColor(110, 110, 110); doc.text(k, M, y); doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.text(String(v || 'Not recorded'), M + 165, y); doc.setFont('helvetica', 'normal'); y += 19 }
+  row('Receipt reference', rec.reference)
+  row('SAFEPLATE ID', rec.safeplateId)
+  row('Paid by', rec.name)
+  row('Laboratory', rec.lab)
+  row('Date', rec.paidAt ? new Date(rec.paidAt).toLocaleString('en-GB') : new Date().toLocaleString('en-GB'))
+  row('Amount paid', naira(amount))
+  row('Status', 'Received, held in escrow')
+  y += 12
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0, 51, 102)
+  doc.text('How this fee is distributed', M, y); y += 8
+  doc.setDrawColor(220, 220, 220); doc.line(M, y, W - M, y); y += 18
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(40, 40, 40)
+  legs.forEach(w => {
+    doc.setTextColor(70, 70, 70); doc.text(w.who + ' (' + w.pct + '%)', M, y)
+    doc.setTextColor(20, 20, 20); doc.text(naira(w.amount), W - M, y, { align: 'right' }); y += 17
+  })
+  doc.setDrawColor(220, 220, 220); doc.line(M, y - 4, W - M, y - 4); y += 12
+  doc.setFont('helvetica', 'bold'); doc.text('Total', M, y); doc.text(naira(amount), W - M, y, { align: 'right' })
+  y += 34
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110, 110, 110)
+  doc.text('Funds are held in escrow by Sterling Bank and released only after the Ministry approves the result.', M, y); y += 12
+  doc.text('This receipt is system-generated and recorded in the SafePlate audit trail.', M, y)
+  doc.save('SafePlate-Receipt-' + (rec.safeplateId || 'payment') + '.pdf')
+}
+
 async function generateCertPDF(cert) {
   const id = cert.safeplateId || cert.safeplate_id
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
@@ -927,6 +1072,7 @@ function tabsForSession(session) {
     { id: 'overview', label: t('nav_overview') },
     { id: 'system', label: t('nav_system') },
     { id: 'impact', label: t('nav_impact') },
+    { id: 'report', label: 'Report a concern' },
     { id: 'verify', label: t('nav_verify') }
   ]
   switch (session.role) {
@@ -938,13 +1084,13 @@ function tabsForSession(session) {
     }
     case 'food_handler': return [{ id: 'testing', label: t('nav_testing') }, { id: 'verify', label: t('nav_verify') }]
     case 'laboratory': return [{ id: 'queue', label: t('nav_queue') }, { id: 'verify', label: t('nav_verify') }]
-    case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
+    case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'premises', label: 'Premises' }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
       { id: 'home', label: t('nav_home') }, { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
       { id: 'batch', label: t('nav_batch') }, { id: 'beneficiaries', label: t('nav_beneficiaries') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
-      if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'complaints', label: 'Complaints' }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
       if (session.agency === 'HEFAMAA') return [{ id: 'home', label: t('nav_home') }, { id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
       return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
     default: return [{ id: 'verify', label: t('nav_verify') }]
@@ -1765,10 +1911,71 @@ function ImpactPage() {
   )
 }
 
+// Camera QR scanner. Reads a SafePlate QR and hands back the SAFEPLATE ID.
+// Requires HTTPS (Vercel provides it) and one-off camera permission.
+function QrScanner({ onFound, onClose }) {
+  const videoRef = React.useRef(null)
+  const canvasRef = React.useRef(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let stream = null, raf = null, stopped = false
+    async function start() {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setErr('This device or browser cannot open the camera. Type the ID instead.'); return }
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        const v = videoRef.current
+        if (!v) return
+        v.srcObject = stream; v.setAttribute('playsinline', 'true'); await v.play()
+        const tick = () => {
+          if (stopped) return
+          const c = canvasRef.current
+          if (v.readyState === v.HAVE_ENOUGH_DATA && c) {
+            c.width = v.videoWidth; c.height = v.videoHeight
+            const ctx = c.getContext('2d')
+            ctx.drawImage(v, 0, 0, c.width, c.height)
+            try {
+              const img = ctx.getImageData(0, 0, c.width, c.height)
+              const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' })
+              if (code && code.data) {
+                const m = String(code.data).match(/SP-(?:W-)?LG-[0-9]+/i)
+                if (m) { stopped = true; onFound(m[0].toUpperCase()); return }
+              }
+            } catch (e) { /* frame not ready */ }
+          }
+          raf = requestAnimationFrame(tick)
+        }
+        raf = requestAnimationFrame(tick)
+      } catch (e) {
+        setErr(e && e.name === 'NotAllowedError' ? 'Camera permission was refused. Allow the camera, or type the ID instead.' : 'The camera could not be opened. Type the ID instead.')
+      }
+    }
+    start()
+    return () => { stopped = true; if (raf) cancelAnimationFrame(raf); if (stream) stream.getTracks().forEach(t => t.stop()) }
+    // eslint-disable-next-line
+  }, [])
+  return (
+    <div style={{ marginTop: 12, border: '1px solid var(--line)', borderRadius: 12, padding: 12, background: '#fafcfb' }}>
+      <div className="row-between" style={{ alignItems: 'center', marginBottom: 8 }}>
+        <span className="kicker" style={{ color: 'var(--green)' }}>Point the camera at the QR code</span>
+        <button className="btn sm" onClick={onClose}>Close camera</button>
+      </div>
+      {err ? <div className="err">{err}</div> : (
+        <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#000' }}>
+          <video ref={videoRef} style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} muted />
+          <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(255,255,255,.85)', borderRadius: 12, pointerEvents: 'none' }} />
+        </div>
+      )}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <p className="muted" style={{ fontSize: 12, marginBottom: 0, marginTop: 8 }}>Scanning happens on this device. No image is uploaded or stored.</p>
+    </div>
+  )
+}
+
 function VerifyWidget({ initialId }) {
   const [id, setId] = useState(initialId || '')
   const [result, setResult] = useState(undefined)
   const [loading, setLoading] = useState(false)
+  const [scan, setScan] = useState(false)
   useEffect(() => { if (initialId) run(initialId) /* eslint-disable-next-line */ }, [initialId])
   async function run(value) {
     const q = (value ?? id).trim()
@@ -1781,6 +1988,8 @@ function VerifyWidget({ initialId }) {
       <div className="field"><label htmlFor="q">{t('verify_label')}</label>
         <input id="q" value={id} onChange={e => setId(e.target.value)} placeholder="SP-LG-YYYYNNNNN" onKeyDown={e => e.key === 'Enter' && run()} /></div>
       <button className="btn p block" onClick={() => run()} disabled={loading}>{loading ? 'Checking...' : t('verify_btn')}</button>
+      <button className="btn block" style={{ marginTop: 8 }} onClick={() => setScan(v => !v)}>{scan ? 'Close camera' : 'Scan QR code'}</button>
+      {scan && <QrScanner onClose={() => setScan(false)} onFound={code => { setScan(false); setId(code); run(code) }} />}
       {result === null && (
         <div className="result EXPIRED" style={{ marginTop: 18 }}><span className="badge EXPIRED">NOT FOUND</span>
           <p style={{ margin: '10px 0 0' }}>{t('verify_notfound')}</p></div>
@@ -1801,6 +2010,46 @@ function VerifyWidget({ initialId }) {
         </div>
       )}
     </div>
+  )
+}
+
+function ReportConcern() {
+  const [f, setF] = useState({ establishment: '', lga: '', detail: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState(null)
+  async function submit() {
+    setErr('')
+    if (f.establishment.trim().length < 3) { setErr('Please enter the name of the establishment.'); return }
+    if (f.detail.trim().length < 20) { setErr('Please describe what you saw, in at least 20 characters, so an officer knows what to look for.'); return }
+    setBusy(true)
+    try { const out = await store.fileComplaint({ establishment: f.establishment.trim(), lga: f.lga, detail: f.detail.trim() }); setDone(out) }
+    catch (e) { setErr(e.message || 'Your report could not be sent. Please try again.') }
+    setBusy(false)
+  }
+  if (done) return (
+    <div className="page"><div className="wrap" style={{ maxWidth: 640 }}>
+      <div className="ok-banner">
+        <div className="kicker" style={{ color: 'var(--green)' }}>Report received</div>
+        <h3 className="serif" style={{ fontSize: 22, margin: '8px 0' }}>Thank you, an officer will look into this</h3>
+        <p className="muted" style={{ marginTop: 0 }}>Your reference is <b className="mono">{done.reference}</b>. Keep it if you wish, though you do not need it, and we have not recorded who you are.</p>
+        <p className="muted" style={{ fontSize: 13 }}>A report prompts an inspection. It is not by itself proof of wrongdoing, so no penalty follows from a report alone.</p>
+      </div>
+    </div></div>
+  )
+  return (
+    <div className="page"><div className="wrap" style={{ maxWidth: 640 }}>
+      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Report a food or water concern</h2></div>
+      <div className="note" style={{ marginBottom: 16 }}>This report is anonymous. We do not ask for your name or number and we do not record them. Tell us where and what you saw, and an officer will be sent to inspect.</div>
+      <div className="card">
+        <div className="field"><label>Establishment name</label><input value={f.establishment} onChange={e => setF({ ...f, establishment: e.target.value })} placeholder="e.g. Mama Nkechi Kitchen" /></div>
+        <div className="field"><label>LGA</label><select value={f.lga} onChange={e => setF({ ...f, lga: e.target.value })}><option value="">Select LGA (optional)</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
+        <div className="field"><label>What did you see?</label><textarea value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} rows={5} placeholder="Describe what concerned you, and when. For example: no running water for handwashing, food left uncovered overnight." style={{ width: '100%', padding: '13px 15px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 15, fontFamily: 'inherit' }} /></div>
+        {err && <div className="err" style={{ marginBottom: 10 }}>{err}</div>}
+        <button className="btn p" onClick={submit} disabled={busy}>{busy ? 'Sending...' : 'Send report anonymously'}</button>
+        <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Because reports are anonymous we cannot come back to you for more detail, so please be as specific as you can.</p>
+      </div>
+    </div></div>
   )
 }
 
@@ -1839,6 +2088,16 @@ function AuthFlow({ onDone, onBack }) {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [labForm, setLabForm] = useState({ labName: '', contactPerson: '', phone: '', address: '', lga: '', bankName: '', accountNumber: '', accountName: '' })
+  const [recOpen, setRecOpen] = useState(false)
+  const [rec, setRec] = useState({ phone: '', nin: '' })
+  const [recResult, setRecResult] = useState(null)
+  const [recErr, setRecErr] = useState('')
+  async function recoverId() {
+    setRecErr(''); setRecResult(null)
+    if (!/^0\d{10}$/.test(rec.phone.replace(/\s+/g, ''))) { setRecErr('Enter your 11-digit phone number, e.g. 08031234567.'); return }
+    if (!/^\d{11}$/.test(rec.nin.replace(/\s+/g, ''))) { setRecErr('Enter your 11-digit NIN.'); return }
+    try { const out = await store.recoverId(rec.phone, rec.nin); setRecResult(out) } catch (e) { setRecErr(e.message || 'No record matches those details.') }
+  }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [otpStage, setOtpStage] = useState(false)
@@ -1942,6 +2201,21 @@ function AuthFlow({ onDone, onBack }) {
           {mode === 'signup' ? 'Already registered? ' : 'New here? '}
           <button className="btn ghost" style={{ padding: 0, color: 'var(--green)', fontWeight: 600 }} onClick={() => { setErr(''); setMode(mode === 'signup' ? 'signin' : 'signup') }}>{mode === 'signup' ? 'Sign in' : 'Create an account'}</button>
         </p>
+        {role.id === 'food_handler' && (
+          <div style={{ marginTop: 10 }}>
+            <button className="btn ghost" style={{ padding: 0, color: 'var(--muted)', fontWeight: 600, fontSize: 13 }} onClick={() => setRecOpen(v => !v)}>Forgot your SAFEPLATE ID?</button>
+            {recOpen && (
+              <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', marginTop: 10, background: '#fafcfb' }}>
+                <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>Enter the phone number and NIN you registered with. Both must match, so nobody can look you up with a phone number alone.</p>
+                <div className="field"><label>Phone number</label><input value={rec.phone} onChange={e => setRec({ ...rec, phone: e.target.value })} placeholder="08031234567" inputMode="numeric" /></div>
+                <div className="field"><label>NIN</label><input value={rec.nin} onChange={e => setRec({ ...rec, nin: e.target.value })} placeholder="11-digit NIN" inputMode="numeric" /></div>
+                {recErr && <div className="err" style={{ marginBottom: 8 }}>{recErr}</div>}
+                {recResult && <div className="ok-banner" style={{ padding: '12px 14px', marginBottom: 8 }}><div className="muted" style={{ fontSize: 12.5 }}>Your SAFEPLATE ID</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{recResult.safeplateId}</div></div>}
+                <button className="btn sm" onClick={recoverId}>Recover my ID</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div></div>
   )
@@ -2007,7 +2281,7 @@ function journeyStep(order, cert) {
   return 3
 }
 
-function FoodDashboard({ data, session, onNew }) {
+function FoodDashboard({ data, session, onNew, onRenew }) {
   const { h, cert, order } = data
   const step = journeyStep(order, cert)
   const valid = cert && cert.status === 'VALID'
@@ -2024,6 +2298,20 @@ function FoodDashboard({ data, session, onNew }) {
         </div>
       </div>
       <FoodJourney step={step} />
+      {!valid && order && (() => {
+        const started = order.createdAt || order.created_at
+        if (!started) return null
+        const base = new Date(started).getTime()
+        const soon = new Date(base + (step >= 5 ? 3 : 2) * 86400000)
+        const what = step >= 5 ? 'Ministry decision expected by' : 'Laboratory results expected by'
+        const late = Date.now() > soon.getTime()
+        return (
+          <div className="note" style={{ marginBottom: 16, borderColor: late ? '#b3261e' : 'var(--line)' }}>
+            {what} <b>{soon.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</b>.
+            {late ? ' This is now overdue and has been escalated to the Ministry for follow-up.' : ' Laboratories work to a 48-hour turnaround.'}
+          </div>
+        )
+      })()}
       {valid && (
         <div className="card">
           <div className="row-between" style={{ alignItems: 'flex-start' }}>
@@ -2033,9 +2321,24 @@ function FoodDashboard({ data, session, onNew }) {
               <div className="muted" style={{ fontSize: 13 }}>{cert.cert_no || cert.certNo || ''}</div>
               <div style={{ marginTop: 10, fontSize: 14 }}>Expires {new Date(cert.expiry).toLocaleDateString('en-GB')}</div>
               <div style={{ fontWeight: 700, color: days <= 30 ? '#b3261e' : 'var(--green)', marginTop: 2 }}>{days > 0 ? days + ' days remaining' : 'Expired, renew now'}</div>
-              <button className="btn g" style={{ marginTop: 14 }} onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                <button className="btn g" onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
+                {h.paymentRef && <button className="btn" onClick={() => generateReceiptPDF({ reference: h.paymentRef, safeplateId: h.safeplateId, name: h.name, lab: h.lab, paidAt: h.paidAt, amount: h.paidAmount || FEE, type: 'FOOD' })}>Payment receipt</button>}
+              </div>
             </div>
             {(cert.photo || h.photo) && <img src={cert.photo || h.photo} alt="" style={{ width: 96, height: 112, objectFit: 'cover', borderRadius: 10, border: '2px solid var(--green)' }} />}
+          </div>
+        </div>
+      )}
+      {cert && days !== null && days <= 30 && (
+        <div className="card" style={{ marginTop: 16, borderColor: days > 0 ? 'var(--gold)' : '#b3261e', borderWidth: 2 }}>
+          <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div className="kicker" style={{ color: days > 0 ? '#9a6200' : '#b3261e' }}>{days > 0 ? 'Renewal due' : 'Certificate expired'}</div>
+              <h3 className="serif" style={{ fontSize: 18, margin: '4px 0' }}>{days > 0 ? 'Your certificate expires in ' + days + ' days' : 'Your certificate has expired'}</h3>
+              <div className="muted" style={{ fontSize: 13 }}>Renewal repeats the full test panel and costs {naira(FEE)}. Your SAFEPLATE ID and details stay the same, so you only choose a laboratory and pay.</div>
+            </div>
+            <button className="btn p" onClick={onRenew}>Renew now</button>
           </div>
         </div>
       )}
@@ -2056,8 +2359,22 @@ function FoodHandlerModule({ session }) {
   const [checking, setChecking] = useState(true)
   const [mine, setMine] = useState(null)
   const [showWizard, setShowWizard] = useState(false)
+  const [renewing, setRenewing] = useState(false)
+  const draftKey = 'sp_draft_' + (session.email || 'anon')
+  const [draft, setDraft] = useState(null)
+  const [paymentRef, setPaymentRef] = useState('')
+  const [paidStamp, setPaidStamp] = useState('')
   const [labs, setLabs] = useState(() => labsView())
   useEffect(() => { store.allLabs().then(setLabs).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!showWizard || renewing || step === 0 || step >= 4) return
+    try { localStorage.setItem(draftKey, JSON.stringify({ form, step, savedAt: Date.now() })) } catch (e) { /* storage unavailable */ }
+  }, [form, step, showWizard, renewing, draftKey])
+  useEffect(() => {
+    try { const raw = localStorage.getItem(draftKey); if (raw) { const d = JSON.parse(raw); if (d && d.form && d.form.name) setDraft(d) } } catch (e) { /* ignore */ }
+  }, [draftKey])
+  function resumeDraft() { if (!draft) return; setForm(draft.form); setStep(draft.step || 1); setShowWizard(true); setDraft(null); toast('Registration resumed where you left off.') }
+  function discardDraft() { try { localStorage.removeItem(draftKey) } catch (e) { /* ignore */ } setDraft(null) }
   useEffect(() => { (async () => { try { const hh = await store.getMyHandler(session); if (hh) { const cert = await store.verifyCertificate(hh.safeplateId); const order = await store.getOrderFor(hh.safeplateId); setMine({ h: hh, cert, order }) } } catch (e) { /* ignore */ } setChecking(false) })() /* eslint-disable-next-line */ }, [])
 
   async function register() {
@@ -2082,25 +2399,49 @@ function FoodHandlerModule({ session }) {
     setErr(''); setBusy(true)
     try {
       const escrowPayload = { safeplateId: form.safeplateId, name: form.name, lab: form.lab.name, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() }
-      const { reference } = await payWithPaystack({ email: form.email, amountNaira: FEE, reference: 'SP-' + form.safeplateId })
+      const { reference } = await payWithPaystack({ email: form.email, amountNaira: FEE, reference: 'SP-' + form.safeplateId + (renewing ? '-R' + Date.now().toString().slice(-5) : '') })
+      const paidAt = new Date().toISOString()
       if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId, escrow: escrowPayload }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
-      await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, createdAt: new Date().toISOString() })
-      await store.createOrder({ id: 'ORD-' + form.safeplateId.replace('SP-LG-', ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
+      await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, paymentRef: reference, paidAt, paidAmount: FEE, createdAt: new Date().toISOString() })
+      await store.createOrder({ id: 'ORD-' + form.safeplateId.replace('SP-LG-', '') + (renewing ? '-R' + Date.now().toString().slice(-5) : ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
       if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
       await store.notify(session.email, 'Payment received', naira(FEE) + ' held in escrow for your test')
       await store.dispatch(form.phone, 'sms', 'SafePlate: your ' + naira(FEE) + ' test payment is confirmed. ID ' + form.safeplateId)
+      try { localStorage.removeItem(draftKey) } catch (e) { /* ignore */ }
+      setPaymentRef(reference); setPaidStamp(paidAt)
       setF('paid', true); setStep(4); toast('Payment received, held in escrow.')
     } catch (e) { setErr('Payment could not be completed. Your test order is saved for 48 hours, try again.') } finally { setBusy(false) }
   }
 
   if (checking) return <div className="page"><div className="wrap"><div className="skelrow"><div className="skel" style={{height:80}} /><div className="skel" style={{height:120}} /><div className="skel" style={{height:180}} /></div></div></div>
-  if (mine && !showWizard) return <FoodDashboard data={mine} session={session} onNew={() => { setShowWizard(true); setStep(0) }} />
+  function startRenewal() {
+    const h = mine.h || {}
+    setForm(f => ({ ...f, name: h.name || f.name, phone: h.phone || '', dob: h.dob || '', gender: h.gender || '', address: h.address || '', lga: h.lga || '', nin: h.nin || '', email: h.email || session.email || '', employer: h.employer || '', photo: h.photo || f.photo, safeplateId: h.safeplateId, lab: null, paid: false }))
+    setRenewing(true); setShowWizard(true); setStep(1); setErr('')
+  }
+  if (mine && !showWizard) return <FoodDashboard data={mine} session={session} onNew={() => { setRenewing(false); setShowWizard(true); setStep(0) }} onRenew={startRenewal} />
 
   return (
     <div className="page"><div className="wrap">
+      {draft && !renewing && step === 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'var(--gold)', borderWidth: 2 }}>
+          <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div className="kicker" style={{ color: '#9a6200' }}>Unfinished registration</div>
+              <h3 className="serif" style={{ fontSize: 17, margin: '4px 0' }}>Carry on where you left off</h3>
+              <div className="muted" style={{ fontSize: 13 }}>We saved these details on {new Date(draft.savedAt).toLocaleDateString('en-GB')}. Nothing has been paid yet.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn sm" onClick={discardDraft}>Start fresh</button>
+              <button className="btn p sm" onClick={resumeDraft}>Resume</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {renewing && <div className="note" style={{ marginBottom: 16, borderColor: 'var(--gold)' }}>You are renewing certificate <b className="mono">{form.safeplateId}</b>. Your details are already filled in. Choose your laboratory and pay {naira(FEE)} to book the full retest.</div>}
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{t('fh_title')}</h2><span className="muted" style={{ fontSize: 13 }}>{session.title}</span></div>
       <FoodJourney step={step} />
       <div className="steps">{STEP_LABELS.map((l, i) => <div key={l} className={'s ' + (i === step ? 'on' : '') + (i < step ? ' done' : '')} title={l} />)}</div>
@@ -2171,6 +2512,7 @@ function FoodHandlerModule({ session }) {
             <div className="qwrap"><QRCodeSVG value={window.location.origin + '/#/verify/' + form.safeplateId} size={128} fgColor={PALETTE.navy} level="M" /></div>
             <div className="muted" style={{ fontSize: 12.5 }}>Status once approved: valid for 6 months</div>
           </div>
+          <button className="btn" style={{ marginTop: 14 }} onClick={() => generateReceiptPDF({ reference: paymentRef, safeplateId: form.safeplateId, name: form.name, lab: form.lab && form.lab.name, paidAt: paidStamp, amount: FEE, type: 'FOOD' })}>Download payment receipt</button>
         </div>
       )}
     </div></div>
@@ -2198,6 +2540,11 @@ function LaboratoryModule({ session }) {
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Laboratory queue</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
+      {(() => {
+        const late = orders.filter(o => ['Scheduled', 'Sample Collected', 'Testing in Progress'].includes(o.status) && slaExceeded(o))
+        if (!late.length) return null
+        return <div className="note" style={{ marginBottom: 16, borderColor: '#b3261e', background: '#fdeeee' }}><b>{late.length} sample{late.length === 1 ? ' has' : 's have'} passed the 48-hour turnaround.</b> The Ministry is notified automatically when this happens. Submit these results first: {late.slice(0, 5).map(o => o.safeplateId).join(', ')}{late.length > 5 ? ' and others' : ''}.</div>
+      })()}
       <div className="row-between" style={{ marginBottom: 16 }}>
         <span className="muted" style={{ fontSize: 13 }}>Viewing queue for:</span>
         <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -2431,6 +2778,49 @@ function OfficerProgress({ session }) {
   )
 }
 
+function OfflineBar({ session }) {
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine !== false)
+  const [pending, setPending] = useState(OFFLINE.queue().length)
+  const [warm, setWarm] = useState(OFFLINE.get('warmedAt'))
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const up = () => setOnline(true), down = () => setOnline(false)
+    window.addEventListener('online', up); window.addEventListener('offline', down)
+    const t = setInterval(() => setPending(OFFLINE.queue().length), 2500)
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down); clearInterval(t) }
+  }, [])
+  useEffect(() => { if (online) { sync() } /* eslint-disable-next-line */ }, [online])
+  async function sync() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await store.syncOutbox()
+      if (res && res.sent) toast('Synced ' + res.sent + ' offline record' + (res.sent === 1 ? '' : 's') + '.')
+      if (res && res.failed) toast(res.failed + ' record' + (res.failed === 1 ? '' : 's') + ' could not sync and will be retried.', 'warn')
+      const w = await store.warmOfflineCache(session)
+      if (w) setWarm(new Date().toISOString())
+    } catch (e) { /* stay quiet, retried on next reconnect */ }
+    setPending(OFFLINE.queue().length)
+    setBusy(false)
+  }
+  if (online && !pending) return (
+    <div className="note" style={{ marginBottom: 14, fontSize: 13 }}>
+      Working online. {warm ? 'Your offline copy was last refreshed ' + timeAgo(warm) + '.' : 'Preparing your offline copy...'}
+      <button className="btn sm" style={{ marginLeft: 10 }} onClick={sync} disabled={busy}>{busy ? 'Refreshing...' : 'Refresh offline copy'}</button>
+    </div>
+  )
+  return (
+    <div className="note" style={{ marginBottom: 14, borderColor: online ? 'var(--gold)' : '#b3261e', background: online ? '#fdf8ee' : '#fdeeee' }}>
+      <b>{online ? 'Back online' : 'Working offline'}.</b>{' '}
+      {online
+        ? (pending ? pending + ' record' + (pending === 1 ? '' : 's') + ' waiting to sync.' : 'Everything is synced.')
+        : 'Inspections and checks you record now are saved on this device and will sync when you have signal.'}
+      {online && pending > 0 && <button className="btn p sm" style={{ marginLeft: 10 }} onClick={sync} disabled={busy}>{busy ? 'Syncing...' : 'Sync now'}</button>}
+      {!online && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{pending > 0 ? pending + ' record' + (pending === 1 ? '' : 's') + ' saved on this device. ' : ''}Certificate checks use the copy stored on this device, so a handler who is not in that copy cannot be checked until you have signal.</div>}
+    </div>
+  )
+}
+
 function OfficerModule({ session, tab }) {
   const status = session.status || 'Active'
   if (status !== 'Active') return (
@@ -2445,6 +2835,7 @@ function OfficerModule({ session, tab }) {
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{session.agency} field officer</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}{session.badge ? ' · ' + session.badge : ''}{session.lga ? ' · ' + session.lga : ''}</span></div>
+      <OfflineBar session={session} />
       {(tab === 'field' || tab === 'activity') && <OfficerProgress session={session} />}
       {tab === 'field' && <OfficerField session={session} />}
       {tab === 'inspect' && <OfficerInspect session={session} />}
@@ -2458,18 +2849,24 @@ function OfficerField({ session }) {
   const [id, setId] = useState('')
   const [res, setRes] = useState(undefined)
   const [busy, setBusy] = useState(false)
-  async function check() {
-    if (!id.trim()) return; setBusy(true)
-    const r = await store.verifyCertificate(id.trim())
+  const [scan, setScan] = useState(false)
+  async function check(value) {
+    const q = (value ?? id).trim()
+    if (!q) return; setId(q); setBusy(true)
+    const r = await store.verifyCertificate(q)
     setRes(r || null)
-    try { await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'verify', subject: id.trim().toUpperCase(), outcome: r ? r.status : 'Not found' }) } catch (e) { /* ignore */ }
+    try { await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'verify', subject: q.toUpperCase(), outcome: r ? r.status : 'Not found' }) } catch (e) { /* ignore */ }
     setBusy(false); toast('Field check logged.')
   }
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>Verify a food handler certificate on the spot. Every check is logged to the audit trail under your badge.</div>
       <div className="field" style={{ maxWidth: 380 }}><label>SAFEPLATE ID</label><input value={id} onChange={e => setId(e.target.value)} placeholder="SP-LG-YYYYNNNNN" onKeyDown={e => e.key === 'Enter' && check()} /></div>
-      <button className="btn p sm" onClick={check} disabled={busy}>{busy ? 'Checking...' : 'Check certificate'}</button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn p sm" onClick={() => check()} disabled={busy}>{busy ? 'Checking...' : 'Check certificate'}</button>
+        <button className="btn sm" onClick={() => setScan(v => !v)}>{scan ? 'Close camera' : 'Scan QR code'}</button>
+      </div>
+      {scan && <div style={{ maxWidth: 420 }}><QrScanner onClose={() => setScan(false)} onFound={code => { setScan(false); check(code) }} /></div>}
       {res === null && <div className="err" style={{ marginTop: 14 }}>No certificate found for that ID. The handler may be unregistered.</div>}
       {res && (
         <div className={'trust ' + (res.status === 'VALID' ? 'ok' : 'no')} style={{ marginTop: 16 }}>
@@ -2512,6 +2909,11 @@ function OfficerInspect({ session }) {
     const pics = photos.filter(Boolean)
     try {
       await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'inspection', subject: name, outcome, note, photos: pics })
+      // An inspection is what turns a self-registered premises into a verified
+      // one, and it closes any open complaint marker on that establishment.
+      if (!lab && (tgt.verified === false || tgt.underReview)) {
+        try { await store.updateEstablishment(tgt.id, { verified: true, underReview: false, compliance: outcome }) } catch (e) { /* non-blocking */ }
+      }
       if (sanction) {
         if (SANCTION_SEVERE.includes(sanction)) {
           await store.createInspection({ officer: session.name, officerEmail: session.email, agency: session.agency, kind: 'sanction', subject: name, sanction, sanctionStatus: 'Recommended', note, targetId: tgt.id, photos: pics })
@@ -2616,13 +3018,15 @@ function RegulatorHome({ session }) {
     try {
       if (agency === 'LSMoH') {
         const orders = await store.listAllOrders(); const submitted = orders.filter(o => o.status === 'Submitted').length
+        const overdue = orders.filter(o => ['Scheduled', 'Sample Collected', 'Testing in Progress'].includes(o.status) && slaExceeded(o)).length
         const appeals = (await store.listAppeals('LSMoH').catch(() => [])).filter(a => a.status === 'Open').length
         const tickets = (await store.listTickets().catch(() => [])).filter(t => (t.status || 'Open') === 'Open').length
-        setAtt([{ n: submitted, label: 'results awaiting your review', tab: 'Review' }, { n: appeals, label: 'appeals to decide', tab: 'Review' }, { n: tickets, label: 'support requests open', tab: 'Review' }])
+        setAtt([{ n: submitted, label: 'results awaiting your review', tab: 'Review' }, { n: overdue, label: 'samples past the 48-hour laboratory SLA', tab: 'Review' }, { n: appeals, label: 'appeals to decide', tab: 'Review' }, { n: tickets, label: 'support requests open', tab: 'Review' }])
       } else if (agency === 'LASEPA') {
         const w = await store.listAllWaterTests(); const pending = w.filter(x => x.status === 'Submitted, pending LASEPA').length
         const appeals = (await store.listAppeals('LASEPA').catch(() => [])).filter(a => a.status === 'Open').length
-        setAtt([{ n: pending, label: 'water results awaiting approval', tab: 'Water' }, { n: appeals, label: 'appeals to decide', tab: 'Enforcement' }])
+        const complaints = (await store.listComplaints().catch(() => [])).filter(c => (c.status || 'Open') === 'Open').length
+        setAtt([{ n: pending, label: 'water results awaiting approval', tab: 'Water' }, { n: complaints, label: 'public reports to triage', tab: 'Complaints' }, { n: appeals, label: 'appeals to decide', tab: 'Enforcement' }])
       } else {
         const pend = (await store.listPendingLabs().catch(() => [])).length
         setAtt([{ n: pend, label: 'laboratory registrations to approve', tab: 'Accreditation' }])
@@ -2657,6 +3061,7 @@ function RegulatorModule({ session, tab }) {
       {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} session={session} /><AppealsList agency="LASEPA" /></>}
+      {tab === 'complaints' && <ComplaintsQueue session={session} audit={audit} />}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
@@ -2814,10 +3219,63 @@ function SearchBar({ value, onChange, placeholder, hint }) {
 }
 const smatch = (q, ...fields) => { const ql = (q || '').trim().toLowerCase(); return !ql || fields.filter(Boolean).join(' ').toLowerCase().includes(ql) }
 
+function ComplaintsQueue({ session, audit }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { setLoading(true); try { setRows(await store.listComplaints()) } catch (e) { setRows([]) } setLoading(false) }
+  async function decide(c, outcome) {
+    try {
+      await store.triageComplaint(c.id, { status: 'Closed', outcome, triagedBy: session.email, triagedAt: new Date().toISOString() })
+      await audit('Complaint triaged: ' + outcome, c.id)
+      toast('Complaint closed as ' + outcome.toLowerCase() + '.')
+      load()
+    } catch (e) { toast('Could not update the complaint: ' + (e.message || 'try again'), 'err') }
+  }
+  const open = rows.filter(c => (c.status || 'Open') === 'Open')
+  const closed = rows.filter(c => (c.status || 'Open') !== 'Open')
+  return (
+    <div>
+      <div className="tiles">
+        <div className="tile"><div className="v">{open.length}</div><div className="k">Open reports</div></div>
+        <div className="tile"><div className="v">{closed.length}</div><div className="k">Triaged</div></div>
+        <div className="tile"><div className="v">{rows.length}</div><div className="k">Total received</div></div>
+      </div>
+      <div className="note" style={{ marginBottom: 16 }}>Anonymous public reports. Each one schedules an inspection and marks the establishment as under review internally. A report is intelligence, not evidence, so it never applies a sanction on its own. Close it once an officer has looked.</div>
+      <SearchBar value={q} onChange={setQ} placeholder="Search reports by establishment, LGA or detail..." />
+      {loading && <p className="muted">Loading reports...</p>}
+      {!loading && open.length === 0 && <div className="placeholder">No open reports. Anything the public submits will appear here for triage.</div>}
+      {open.filter(c => smatch(q, c.establishment, c.lga, c.detail)).map(c => (
+        <div className="ord" key={c.id}>
+          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{c.establishment}</b><div className="muted" style={{ fontSize: 12.5 }}>{[c.lga, c.id].filter(Boolean).join(' · ')} · {timeAgo(c.createdAt || c.created_at)}</div></div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Open</span></div>
+          <p style={{ fontSize: 14, margin: '10px 0' }}>{c.detail}</p>
+          <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button className="btn sm" onClick={() => decide(c, 'No further action')}>No further action</button>
+            <button className="btn p sm" onClick={() => decide(c, 'Inspection completed')}>Inspected, close</button>
+          </div>
+        </div>
+      ))}
+      {closed.length > 0 && (<>
+        <h3 className="serif" style={{ fontSize: 17, marginTop: 24 }}>Recently triaged</h3>
+        {closed.slice(0, 15).map(c => (
+          <div className="ord" key={c.id}><div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 15 }}>{c.establishment}</b><div className="muted" style={{ fontSize: 12.5 }}>{c.id} · {c.outcome}</div></div><span className="badge" style={{ background: '#e7f4ec', color: '#0a6b39' }}>Closed</span></div></div>
+        ))}
+      </>)}
+    </div>
+  )
+}
+
 function Enforcement({ guard, audit, agency, session }) {
   const [ests, setEsts] = useState([])
   const [q, setQ] = useState('')
   const [officers, setOfficers] = useState([])
+  const [addOpen, setAddOpen] = useState(false)
+  const [nf, setNf] = useState({ name: '', lga: '' })
+  async function addEst() {
+    if (nf.name.trim().length < 3 || !nf.lga) { toast('Enter a name and select an LGA.', 'err'); return }
+    try { await store.createEstablishment({ name: nf.name.trim(), lga: nf.lga, verified: true, registeredBy: (session && session.email) || '', compliance: 'Not yet inspected' }); await audit('Establishment registered', nf.name.trim()); toast('Establishment added to the register.'); setNf({ name: '', lga: '' }); setAddOpen(false); refresh() } catch (e) { toast('Could not add the establishment: ' + (e.message || 'try again'), 'err') }
+  }
   async function refresh() { setEsts(await store.listEstablishments()); try { setOfficers((await store.listOfficers(agency || 'LASEPA')).filter(o => o.status === 'Active')) } catch (e) { setOfficers([]) } }
   useEffect(() => { refresh() /* eslint-disable-next-line */ }, [])
 async function assign(e, email) {
@@ -2843,11 +3301,28 @@ async function escalate(e) {
   return (
     <div>
       <div className="note" style={{ marginBottom: 16 }}>Enforcement is an escalating ladder with an appeals pathway. The aim is compliance as the outcome, not fines as the output.</div>
+      <div className="row-between" style={{ alignItems: 'center', marginBottom: 10 }}>
+        <span className="muted" style={{ fontSize: 13 }}>{ests.filter(e => e.verified === false).length > 0 ? ests.filter(e => e.verified === false).length + ' self-registered premises await verification' : 'All premises on the register are verified'}</span>
+        <button className="btn sm" onClick={() => setAddOpen(v => !v)}>{addOpen ? 'Cancel' : 'Add establishment'}</button>
+      </div>
+      {addOpen && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="field"><label>Establishment name</label><input value={nf.name} onChange={e => setNf({ ...nf, name: e.target.value })} placeholder="e.g. Mama Nkechi Kitchen" /></div>
+          <div className="field"><label>LGA</label><select value={nf.lga} onChange={e => setNf({ ...nf, lga: e.target.value })}><option value="">Select LGA</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
+          <button className="btn p sm" onClick={addEst}>Add to register</button>
+        </div>
+      )}
       <SearchBar value={q} onChange={setQ} placeholder="Search facilities by name, LGA, compliance or sanction..." />
       {ests.filter(e => smatch(q, e.name, e.lga, e.compliance, e.sanction)).length === 0 && <div className="placeholder">No facilities match your search.</div>}
       {ests.filter(e => smatch(q, e.name, e.lga, e.compliance, e.sanction)).map(e => (
         <div className="ord" key={e.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.lga} · {e.compliance}</div></div>{e.appeal && <span className="status Sample">Appeal {e.appeal}</span>}</div>
+          {(e.verified === false || e.underReview) && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '2px 0 10px' }}>
+              {e.verified === false && <span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Self-registered, unverified</span>}
+              {e.underReview && <span className="badge" style={{ background: '#fdeeee', color: '#b3261e' }}>Complaint under review</span>}
+            </div>
+          )}
           <div className="ladder">{SANCTION_LADDER.map(r => <span key={r} className={'rung ' + (e.sanction === r ? 'on' : '')}>{r}</span>)}</div>
           {officers.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}><span className="muted" style={{ fontSize: 12.5 }}>Assigned officer:</span><select value={e.assignedTo || ''} onChange={ev => assign(e, ev.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }}><option value="">Unassigned</option>{officers.map(o => <option key={o.id} value={o.email}>{o.name}{o.lga ? ' (' + o.lga + ')' : ''}</option>)}</select></div>}
           <div className="row-between"><div style={{ display: 'flex', gap: 8 }}><button className="btn sm danger" onClick={() => guard('Escalate sanction for ' + e.name, () => escalate(e))}>Escalate sanction</button>{e.sanction && <button className="btn sm" onClick={() => generateEnforcementLetter(e, session)}>Generate letter</button>}</div><button className="btn sm" onClick={() => guard('Lodge appeal for ' + e.name, () => appeal(e))}>Lodge appeal</button></div>
@@ -3231,7 +3706,52 @@ function Reconcile({ escrow }) {
 
 function EmployerModule({ session, tab }) {
   if (tab === 'water') return <EmployerWater session={session} />
+  if (tab === 'premises') return <EmployerPremises session={session} />
   return <EmployerTeam session={session} />
+}
+
+function EmployerPremises({ session }) {
+  const [rows, setRows] = useState([])
+  const [f, setF] = useState({ name: '', lga: '', address: '' })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { try { const all = await store.listEstablishments(); setRows(all.filter(e => e.registeredBy === session.email)) } catch (e) { setRows([]) } }
+  async function submit() {
+    setMsg('')
+    if (f.name.trim().length < 3) { setMsg('Enter the name of your establishment.'); return }
+    if (!f.lga) { setMsg('Select the LGA where the establishment operates.'); return }
+    setBusy(true)
+    try {
+      await store.createEstablishment({ name: f.name.trim(), lga: f.lga, verified: false, registeredBy: session.email, compliance: 'Not yet inspected' })
+      toast('Premises registered. It stays unverified until an officer inspects it.')
+      setF({ name: '', lga: '', address: '' }); load()
+    } catch (e) { setMsg('Could not register the premises: ' + (e.message || 'please try again.')) }
+    setBusy(false)
+  }
+  return (
+    <div className="page"><div className="wrap">
+      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Your premises</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
+      <div className="note" style={{ marginBottom: 16 }}>Register each place you operate so it appears on the Lagos State register. A premises you register yourself is marked Unverified until an officer has inspected it, so it cannot be presented as an inspection record.</div>
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3 className="serif" style={{ fontSize: 17, marginTop: 0 }}>Register a premises</h3>
+        <div className="field"><label>Establishment name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="e.g. Mama Nkechi Kitchen" /></div>
+        <div className="field"><label>LGA</label><select value={f.lga} onChange={e => setF({ ...f, lga: e.target.value })}><option value="">Select LGA</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
+        <div className="field"><label>Street address</label><input value={f.address} onChange={e => setF({ ...f, address: e.target.value })} placeholder="Street and area" /></div>
+        {msg && <div className="err" style={{ marginBottom: 10 }}>{msg}</div>}
+        <button className="btn p" onClick={submit} disabled={busy}>{busy ? 'Registering...' : 'Register premises'}</button>
+      </div>
+      <h3 className="serif" style={{ fontSize: 17 }}>Registered premises</h3>
+      {rows.length === 0 && <div className="placeholder">You have not registered any premises yet. Add one above so inspectors can find you on the register.</div>}
+      {rows.map(e => (
+        <div className="ord" key={e.id}>
+          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{e.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{e.lga} · {e.compliance || 'Not yet inspected'}</div></div>
+            {e.verified ? <span className="badge" style={{ background: '#e7f4ec', color: '#0a6b39' }}>Verified</span> : <span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Unverified</span>}
+          </div>
+        </div>
+      ))}
+    </div></div>
+  )
 }
 
 const STAFF_STATUSES = { 'Certified': 'ok', 'Pending results': 'no', 'Overdue': 'no', 'Not registered': 'no' }
@@ -3940,6 +4460,7 @@ export default function App() {
     if (!session) {
       if (tab === 'system') return <SystemPage />
       if (tab === 'impact') return <ImpactPage />
+      if (tab === 'report') return <ReportConcern />
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (eff.role === 'food_handler') return <FoodHandlerModule session={eff} />
