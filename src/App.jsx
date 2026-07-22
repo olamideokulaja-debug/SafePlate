@@ -473,7 +473,7 @@ const store = {
     const db = DEMO.read(); const rows = (db.appeals || []).slice().reverse(); return agency ? rows.filter(r => r.agency === agency) : rows
   },
   async resolveAppeal(id, resolution, status) {
-    if (SUPABASE_READY) { await supabase.from('appeals').update({ status: status || 'Resolved', resolution }).eq('id', id); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('appeals').update({ status: status || 'Resolved', resolution }).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.appeals = (db.appeals || []).map(a => a.id === id ? { ...a, status: status || 'Resolved', resolution } : a); DEMO.write(db)
   },
   async createOrder(order) {
@@ -515,11 +515,11 @@ const store = {
   },
   async revokeCertificate(id) {
     const clean = (id || '').trim().toUpperCase()
-    if (SUPABASE_READY) { await supabase.from('certificates').update({ status: 'REVOKED' }).eq('safeplate_id', clean); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('certificates').update({ status: 'REVOKED' }).eq('safeplate_id', clean); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); if (db.certificates?.[clean]) { db.certificates[clean].status = 'REVOKED'; DEMO.write(db) }
   },
   async createEscrow(rec) {
-    if (SUPABASE_READY) { await supabase.from('escrow').upsert(toSnake(rec), { onConflict: 'safeplate_id' }); return rec }
+    if (SUPABASE_READY) { const { error } = await supabase.from('escrow').upsert(toSnake(rec), { onConflict: 'safeplate_id' }); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.escrow = db.escrow || {}; db.escrow[rec.safeplateId] = rec; DEMO.write(db); return rec
   },
   async listEscrow() {
@@ -542,7 +542,7 @@ const store = {
     if (SUPABASE_READY) { return await store.fn('file-complaint', c) }
     const db = DEMO.read(); db.complaints = db.complaints || {}
     const ref = 'CMP-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 899999))
-    db.complaints[ref] = { id: ref, establishment: c.establishment, lga: c.lga || '', detail: c.detail, status: 'Open', createdAt: new Date().toISOString() }
+    db.complaints[ref] = { id: ref, establishment: c.establishment, lga: c.lga || '', detail: c.detail, photos: c.photos || [], status: 'Open', createdAt: new Date().toISOString() }
     const est = Object.values(db.establishments || {}).find(e => (e.name || '').toLowerCase() === (c.establishment || '').toLowerCase())
     if (est) { db.establishments[est.id] = { ...est, underReview: true } }
     DEMO.write(db)
@@ -591,7 +591,7 @@ const store = {
     const full = { id: 'QA-' + Date.now(), ts: new Date().toISOString(), ...rec }
     if (SUPABASE_READY) {
       const { error } = await supabase.from('lab_audits').insert(toSnake(full)); if (error) throw new Error(error.message)
-      await supabase.from('laboratories').update({ last_audit_score: full.score, last_audit_at: full.ts, last_audit_outcome: full.outcome }).eq('id', full.labId)
+      const { error: le } = await supabase.from('laboratories').update({ last_audit_score: full.score, last_audit_at: full.ts, last_audit_outcome: full.outcome }).eq('id', full.labId); if (le) throw new Error(le.message)
       return full
     }
     const db = DEMO.read(); db.labAudits = db.labAudits || []; db.labAudits.unshift(full)
@@ -624,8 +624,8 @@ const store = {
   },
   async releaseEscrow(safeplateId, by) {
     if (SUPABASE_READY) {
-      await supabase.from('escrow').update({ status: 'RELEASED', released_ts: new Date().toISOString(), released_by: by }).eq('safeplate_id', safeplateId)
-      await supabase.from('escrow_releases').update({ status: 'Released' }).eq('safeplate_id', safeplateId)
+      const { error: ee } = await supabase.from('escrow').update({ status: 'RELEASED', released_ts: new Date().toISOString(), released_by: by }).eq('safeplate_id', safeplateId)
+      const { error: re2 } = await supabase.from('escrow_releases').update({ status: 'Released' }).eq('safeplate_id', safeplateId); if (re2) throw new Error(re2.message)
       return
     }
     const db = DEMO.read()
@@ -635,7 +635,7 @@ const store = {
   },
   async appendAudit(entry) {
     const row = { ...entry, ts: new Date().toISOString(), ip: 'captured server-side' }
-    if (SUPABASE_READY) { await supabase.from('audit_log').insert(row); return row }
+    if (SUPABASE_READY) { const { error } = await supabase.from('audit_log').insert(row); if (error) console.warn('Audit entry could not be written:', error.message); return row }
     const db = DEMO.read(); db.audit = db.audit || []; db.audit.unshift(row); DEMO.write(db); return row
   },
   async listAudit() {
@@ -659,7 +659,7 @@ const store = {
     const db = DEMO.read(); db.establishments = db.establishments || {}; db.establishments[id] = { ...(db.establishments[id] || {}), ...patch }; DEMO.write(db)
   },
   async setLabAccredited(id, val) {
-    if (SUPABASE_READY) { await supabase.from('laboratories').update({ accredited: val }).eq('id', id) }
+    if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').update({ accredited: val }).eq('id', id); if (error) throw new Error(error.message) }
     const db = DEMO.read(); db.labAccred = db.labAccred || {}; db.labAccred[id] = val
     if (db.regLabs && db.regLabs[id]) db.regLabs[id].accredited = val
     DEMO.write(db)
@@ -680,6 +680,16 @@ const store = {
     let max = 0
     used.forEach(a => { const m = String(a).match(/HEF-LAB-(\d+)/i); if (m) max = Math.max(max, parseInt(m[1], 10)) })
     return 'HEF-LAB-' + String(max + 1).padStart(4, '0')
+  },
+  async saveLabAvailability(labId, availability) {
+    if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').update({ availability }).eq('id', labId); if (error) throw new Error(error.message); return availability }
+    const db = DEMO.read(); db.labAvail = db.labAvail || {}; db.labAvail[labId] = availability
+    if (db.regLabs && db.regLabs[labId]) db.regLabs[labId].availability = availability
+    DEMO.write(db); return availability
+  },
+  async getLabAvailability(labId) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('laboratories').select('availability').eq('id', labId).maybeSingle(); return (data && data.availability) || null }
+    const db = DEMO.read(); return (db.labAvail || {})[labId] || null
   },
   async issueAccNo(id) {
     const accNo = await store.nextAccNo()
@@ -706,7 +716,7 @@ const store = {
     return accNo
   },
   async declineLab(id) {
-    if (SUPABASE_READY) { await supabase.from('laboratories').update({ status: 'Declined', accredited: false }).eq('id', id); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('laboratories').update({ status: 'Declined', accredited: false }).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); if (db.regLabs && db.regLabs[id]) db.regLabs[id].status = 'Declined'; DEMO.write(db)
   },
   async accreditedLabList() {
@@ -730,11 +740,11 @@ const store = {
     const db = DEMO.read(); return (db.businesses || {})[email] || null
   },
   async saveBusiness(email, biz) {
-    if (SUPABASE_READY) { await supabase.from('businesses').upsert({ ...toSnake(biz), owner_email: email }); return biz }
+    if (SUPABASE_READY) { const { error } = await supabase.from('businesses').upsert({ ...toSnake(biz), owner_email: email }); if (error) throw new Error(error.message); return biz }
     const db = DEMO.read(); db.businesses = db.businesses || {}; db.businesses[email] = biz; DEMO.write(db); return biz
   },
   async createWaterTest(rec) {
-    if (SUPABASE_READY) { await supabase.from('water_tests').upsert(toSnake(rec), { onConflict: 'swid' }); return rec }
+    if (SUPABASE_READY) { const { error } = await supabase.from('water_tests').upsert(toSnake(rec), { onConflict: 'swid' }); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.water = db.water || {}; db.water[rec.swid] = rec; DEMO.write(db); return rec
   },
   async listWaterTests(email) {
@@ -761,11 +771,11 @@ const store = {
   },
   async addOfficer(o) {
     const rec = { id: o.id || ('OFF-' + Date.now()), status: o.status || 'Active', createdAt: new Date().toISOString(), ...o }
-    if (SUPABASE_READY) { await supabase.from('officers').upsert(toSnake(rec), { onConflict: 'email' }); return rec }
+    if (SUPABASE_READY) { const { error } = await supabase.from('officers').upsert(toSnake(rec), { onConflict: 'email' }); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.officers = db.officers || {}; db.officers[rec.id] = rec; DEMO.write(db); return rec
   },
   async updateOfficer(id, patch) {
-    if (SUPABASE_READY) { await supabase.from('officers').update(toSnake(patch)).eq('id', id); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('officers').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.officers = db.officers || {}; db.officers[id] = { ...(db.officers[id] || {}), ...patch }; DEMO.write(db)
   },
   async createTicket(t) {
@@ -792,12 +802,12 @@ const store = {
     return rows
   },
   async updateInspection(id, patch) {
-    if (SUPABASE_READY) { await supabase.from('inspections').update(toSnake(patch)).eq('id', id); return }
+    if (SUPABASE_READY) { const { error } = await supabase.from('inspections').update(toSnake(patch)).eq('id', id); if (error) throw new Error(error.message); return }
     const db = DEMO.read(); db.inspections = (db.inspections || []).map(r => r.id === id ? { ...r, ...patch } : r); DEMO.write(db)
   },
   async notify(audience, title, body) {
     const row = { audience, title, body, ts: new Date().toISOString() }
-    if (SUPABASE_READY) { await supabase.from('notifications').insert(row); return row }
+    if (SUPABASE_READY) { const { error } = await supabase.from('notifications').insert(row); if (error) console.warn('Notification could not be written:', error.message); return row }
     const db = DEMO.read(); db.notices = db.notices || []; db.notices.unshift(row); DEMO.write(db); return row
   },
   async listNotices(session) {
@@ -864,6 +874,7 @@ const BURDEN = [
   { stat: 'US$110bn', label: 'annual cost to low and middle-income economies', src: 'World Bank' }
 ]
 
+const NDPA_CONSENT_VERSION = 'NDPA-2026-v1'
 const MANDATORY_TESTS = ['Hepatitis A', 'Hepatitis E', 'Stool Microscopy & Culture (MC)']
 
 const LAGOS_LGAS = ['Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere']
@@ -1037,6 +1048,7 @@ function labsView() {
   const base = LABS.map(l => {
     let out = (l.id in ov ? { ...l, accredited: ov[l.id] } : l)
     if (an[l.id]) out = { ...out, accNo: an[l.id] }
+    const av = (db.labAvail || {})[l.id]; if (av) out = { ...out, availability: av }
     return out
   })
   const reg = Object.values(db.regLabs || {}).filter(l => l.status !== 'Declined')
@@ -1141,7 +1153,7 @@ function tabsForSession(session) {
       return ot
     }
     case 'food_handler': return [{ id: 'testing', label: t('nav_testing') }, { id: 'verify', label: t('nav_verify') }]
-    case 'laboratory': return [{ id: 'queue', label: t('nav_queue') }, { id: 'verify', label: t('nav_verify') }]
+    case 'laboratory': return [{ id: 'queue', label: t('nav_queue') }, { id: 'availability', label: 'Availability' }, { id: 'verify', label: t('nav_verify') }]
     case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'premises', label: 'Premises' }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
       { id: 'home', label: t('nav_home') }, { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
@@ -1150,7 +1162,7 @@ function tabsForSession(session) {
     case 'regulator':
       if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'complaints', label: 'Complaints' }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
       if (session.agency === 'HEFAMAA') return [{ id: 'home', label: t('nav_home') }, { id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'complaints', label: 'Complaints' }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
     default: return [{ id: 'verify', label: t('nav_verify') }]
   }
 }
@@ -1301,7 +1313,8 @@ function Styles() {
       .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
       .tile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px}
       .trend{font-size:11.5px;font-weight:700;margin-top:6px}
-      .attn-pill{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 16px;font-size:13.5px;display:flex;align-items:baseline;gap:7px}
+      .attn-pill{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 16px;font-size:13.5px;display:flex;align-items:baseline;gap:7px;cursor:pointer;text-align:left;font-family:inherit;color:inherit;transition:border-color .15s,box-shadow .15s}
+      .attn-pill:hover{border-color:var(--green);box-shadow:0 2px 10px rgba(0,102,0,.10)}
       .tile .v{font-family:'Lora',serif;font-size:24px;color:var(--navy)}
       .tile .k{font-size:12px;color:var(--muted);margin-top:4px}
       .modal-bg{position:fixed;inset:0;background:rgba(6,20,14,.5);display:grid;place-items:center;z-index:80;padding:20px}
@@ -2079,6 +2092,14 @@ function VerifyWidget({ initialId }) {
 
 function ReportConcern() {
   const [f, setF] = useState({ establishment: '', lga: '', detail: '' })
+  const [photos, setPhotos] = useState([])
+  async function addPhotos(files) {
+    const list = Array.from(files || []).slice(0, 4 - photos.length)
+    for (const file of list) {
+      try { const d = await compressImage(file, 260); setPhotos(p => (p.length >= 4 ? p : [...p, d])) }
+      catch (e) { /* skip unreadable file */ }
+    }
+  }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(null)
@@ -2087,7 +2108,7 @@ function ReportConcern() {
     if (f.establishment.trim().length < 3) { setErr('Please enter the name of the establishment.'); return }
     if (f.detail.trim().length < 20) { setErr('Please describe what you saw, in at least 20 characters, so an officer knows what to look for.'); return }
     setBusy(true)
-    try { const out = await store.fileComplaint({ establishment: f.establishment.trim(), lga: f.lga, detail: f.detail.trim() }); setDone(out) }
+    try { const out = await store.fileComplaint({ establishment: f.establishment.trim(), lga: f.lga, detail: f.detail.trim(), photos }); setDone(out) }
     catch (e) { setErr(e.message || 'Your report could not be sent. Please try again.') }
     setBusy(false)
   }
@@ -2109,6 +2130,21 @@ function ReportConcern() {
         <div className="field"><label>Establishment name</label><input value={f.establishment} onChange={e => setF({ ...f, establishment: e.target.value })} placeholder="e.g. Mama Nkechi Kitchen" /></div>
         <div className="field"><label>LGA</label><select value={f.lga} onChange={e => setF({ ...f, lga: e.target.value })}><option value="">Select LGA (optional)</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
         <div className="field"><label>What did you see?</label><textarea value={f.detail} onChange={e => setF({ ...f, detail: e.target.value })} rows={5} placeholder="Describe what concerned you, and when. For example: no running water for handwashing, food left uncovered overnight." style={{ width: '100%', padding: '13px 15px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 15, fontFamily: 'inherit' }} /></div>
+        <div className="field">
+          <label>Photographs or documents (optional, up to 4)</label>
+          <input type="file" accept="image/*" multiple onChange={e => addPhotos(e.target.files)} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>A photograph helps an officer know what to look for. Please do not photograph people's faces.</div>
+          {photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              {photos.map((p, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={p} alt={'Evidence ' + (i + 1)} style={{ width: 82, height: 82, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} />
+                  <button className="btn sm" style={{ position: 'absolute', top: -8, right: -8, padding: '2px 8px', minHeight: 0, borderRadius: 20 }} onClick={() => setPhotos(ps => ps.filter((_, k) => k !== i))}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         {err && <div className="err" style={{ marginBottom: 10 }}>{err}</div>}
         <button className="btn p" onClick={submit} disabled={busy}>{busy ? 'Sending...' : 'Send report anonymously'}</button>
         <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Because reports are anonymous we cannot come back to you for more detail, so please be as specific as you can.</p>
@@ -2371,6 +2407,7 @@ function FoodDashboard({ data, session, onNew, onRenew }) {
         const late = Date.now() > soon.getTime()
         return (
           <div className="note" style={{ marginBottom: 16, borderColor: late ? '#b3261e' : 'var(--line)' }}>
+            {(order.appointmentDate || order.appointment_date) && step < 5 && <><b>Your appointment: {new Date(order.appointmentDate || order.appointment_date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}{(order.appointmentSlot || order.appointment_slot) ? ', ' + (order.appointmentSlot || order.appointment_slot) : ''}</b>. </>}
             {what} <b>{soon.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</b>.
             {late ? ' This is now overdue and has been escalated to the Ministry for follow-up.' : ' Laboratories work to a 48-hour turnaround.'}
           </div>
@@ -2426,6 +2463,7 @@ function FoodHandlerModule({ session }) {
   const [renewing, setRenewing] = useState(false)
   const draftKey = 'sp_draft_' + (session.email || 'anon')
   const [draft, setDraft] = useState(null)
+  const [avail, setAvail] = useState(null)
   const [paymentRef, setPaymentRef] = useState('')
   const [paidStamp, setPaidStamp] = useState('')
   const [labs, setLabs] = useState(() => labsView())
@@ -2448,6 +2486,7 @@ function FoodHandlerModule({ session }) {
     if (!/^0\d{10}$/.test((form.phone || '').replace(/\s+/g, ''))) { setErr('Enter a valid 11-digit phone number, e.g. 08031234567.'); return }
     if (form.nin && !/^\d{11}$/.test((form.nin || '').replace(/\s+/g, ''))) { setErr('NIN must be exactly 11 digits.'); return }
     if (!form.photo) { setErr('A passport photo is required. It is printed on your certificate to prevent anyone else using it.'); return }
+    if (!form.consent) { setErr('You must agree to the processing of your personal data before you can register. This is required by the Nigeria Data Protection Act.'); return }
     if (!/^0?\d{10,11}$/.test(form.phone.replace(/\s+/g, ''))) { setErr('Enter a valid Nigerian phone number.'); return }
     setBusy(true)
     try {
@@ -2458,8 +2497,22 @@ function FoodHandlerModule({ session }) {
   function chooseLab(lab) {
     if (!lab.accredited) { setErr('That laboratory is not currently accredited. Choose an accredited laboratory.'); return }
     setErr(''); setF('lab', lab); setStep(3)
+    setAvail(null); setF('apptDate', ''); setF('apptSlot', '')
+    store.getLabAvailability(lab.id).then(a => setAvail(a && a.days && Object.keys(a.days).length ? a : null)).catch(() => setAvail(null))
+  }
+  // Offer the next 21 days that fall on a day the laboratory actually opens.
+  function bookableDates() {
+    if (!avail || !avail.days) return []
+    const out = []
+    for (let i = 1; i <= 21; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i)
+      const nm = WEEKDAYS[(d.getDay() + 6) % 7]
+      if ((avail.days[nm] || []).length) out.push({ iso: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), day: nm })
+    }
+    return out
   }
   async function pay() {
+    if (avail && (!form.apptDate || !form.apptSlot)) { setErr('Choose an appointment date and time slot before paying.'); return }
     setErr(''); setBusy(true)
     try {
       const escrowPayload = { safeplateId: form.safeplateId, name: form.name, lab: form.lab.name, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() }
@@ -2468,8 +2521,8 @@ function FoodHandlerModule({ session }) {
       if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId, escrow: escrowPayload }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
-      await store.saveHandler({ safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, paymentRef: reference, paidAt, paidAmount: FEE, createdAt: new Date().toISOString() })
-      await store.createOrder({ id: 'ORD-' + form.safeplateId.replace('SP-LG-', '') + (renewing ? '-R' + Date.now().toString().slice(-5) : ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
+      await store.saveHandler({ consentGiven: true, consentAt: new Date().toISOString(), consentVersion: NDPA_CONSENT_VERSION, safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, paymentRef: reference, paidAt, paidAmount: FEE, createdAt: new Date().toISOString() })
+      await store.createOrder({ appointmentDate: form.apptDate || null, appointmentSlot: form.apptSlot || null, id: 'ORD-' + form.safeplateId.replace('SP-LG-', '') + (renewing ? '-R' + Date.now().toString().slice(-5) : ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
       if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
       await store.notify(session.email, 'Payment received', naira(FEE) + ' held in escrow for your test')
@@ -2528,7 +2581,19 @@ function FoodHandlerModule({ session }) {
           <div className="field"><label>{t('lbl_employer')}</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
           <div className="field"><label>Employer address (optional)</label><input value={form.employerAddress} onChange={e => setF('employerAddress', e.target.value)} placeholder="Where you work" /></div>
           <div className="field"><label>Passport photo <span style={{ color: 'var(--green)' }}>(required)</span></label><input type="file" accept="image/*" onChange={async e => { const f = e.target.files && e.target.files[0]; if (f) { try { setF('photo', await compressImage(f)) } catch { /* ignore */ } } }} /><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Your photo is printed on your certificate so it cannot be used by anyone else.</div>{form.photo && <img src={form.photo} alt="preview" style={{ marginTop: 8, width: 84, height: 96, objectFit: 'cover', borderRadius: 10, border: '2px solid var(--green)' }} />}</div>
-          <button className="btn p block" onClick={register} disabled={busy}>{busy ? 'Checking...' : t('btn_create_id')}</button>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', margin: '4px 0 14px', background: '#fafcfb' }}>
+            <div className="kicker" style={{ color: 'var(--green)', marginBottom: 8 }}>Consent to process your data</div>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13.5, lineHeight: 1.55 }}>
+              <input type="checkbox" checked={!!form.consent} onChange={e => setF('consent', e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, flex: '0 0 auto' }} />
+              <span>
+                I agree that Lagos State may store and process the personal data I have provided, including my name, date of birth, contact details, address, National Identification Number and photograph, together with my test results, for the purpose of food handler certification and public health regulation under the Nigeria Data Protection Act 2023.
+                <span style={{ display: 'block', marginTop: 8, color: 'var(--muted)', fontSize: 12.5 }}>
+                  Your results are held encrypted and are visible only to the Ministry of Health and to you. Employers and the public can see whether your certificate is valid, never your medical results. Data is retained while your certification is active and for the statutory period after. You may request a copy of your data, or ask for it to be corrected, at any time.
+                </span>
+              </span>
+            </label>
+          </div>
+          <button className="btn p block" onClick={register} disabled={busy || !form.consent}>{busy ? 'Checking...' : t('btn_create_id')}</button>
         </div>
       )}
       {step === 1 && (
@@ -2556,6 +2621,25 @@ function FoodHandlerModule({ session }) {
         <div className="card">
           <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s4')}</h3><span className="st">Step 4 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Your {naira(FEE)} is held in Sterling Bank escrow and released only after the Ministry approves your results. Payment is by Paystack.</p>
+          {avail && (
+            <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', marginBottom: 14, background: '#fafcfb' }}>
+              <div className="kicker" style={{ color: 'var(--green)', marginBottom: 8 }}>Book your sample appointment</div>
+              <div className="field"><label>Date</label><select value={form.apptDate || ''} onChange={e => { setF('apptDate', e.target.value); setF('apptSlot', '') }}><option value="">Select a date</option>{bookableDates().map(d => <option key={d.iso} value={d.iso}>{d.label}</option>)}</select></div>
+              {form.apptDate && (() => {
+                const chosen = bookableDates().find(d => d.iso === form.apptDate)
+                const slots = chosen ? (avail.days[chosen.day] || []) : []
+                return (
+                  <div className="field"><label>Time slot</label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {slots.map(sl => <button key={sl} className={'btn sm' + (form.apptSlot === sl ? ' p' : '')} onClick={() => setF('apptSlot', sl)}>{sl}</button>)}
+                    </div>
+                  </div>
+                )
+              })()}
+              {avail.note && <div className="muted" style={{ fontSize: 12.5 }}>{avail.note}</div>}
+            </div>
+          )}
+          {!avail && form.lab && <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>This laboratory has not published appointment times. Contact them directly to arrange your sample once you have paid.</div>}
           <table className="split-tbl"><tbody>
             <tr><td>Laboratory</td><td>{form.lab?.name}</td></tr>
             <tr><td>Test panel</td><td>Hepatitis A, Hepatitis E, Stool MC</td></tr>
@@ -2587,7 +2671,88 @@ function FoodHandlerModule({ session }) {
 /*  Stage 4: Laboratory portal                                         */
 /* ------------------------------------------------------------------ */
 
-function LaboratoryModule({ session }) {
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const DEFAULT_SLOTS = ['08:00 to 10:00', '10:00 to 12:00', '12:00 to 14:00', '14:00 to 16:00']
+
+function LabAvailability({ session }) {
+  const [labs, setLabs] = useState([])
+  const [labId, setLabId] = useState('')
+  const [av, setAv] = useState({ days: {}, note: '' })
+  const [busy, setBusy] = useState(false)
+  const [newSlot, setNewSlot] = useState('')
+  useEffect(() => { (async () => {
+    try { const list = await store.accreditedLabList(); setLabs(list); if (list.length) { setLabId(list[0].id); loadFor(list[0].id) } } catch (e) { /* ignore */ }
+  })() /* eslint-disable-next-line */ }, [])
+  async function loadFor(id) {
+    try { const a = await store.getLabAvailability(id); setAv(a && a.days ? a : { days: {}, note: '' }) } catch (e) { setAv({ days: {}, note: '' }) }
+  }
+  function toggleDay(d) {
+    setAv(a => { const days = { ...(a.days || {}) }; if (days[d]) delete days[d]; else days[d] = [...DEFAULT_SLOTS]; return { ...a, days } })
+  }
+  function toggleSlot(d, slot) {
+    setAv(a => { const days = { ...(a.days || {}) }; const cur = days[d] || []; days[d] = cur.includes(slot) ? cur.filter(x => x !== slot) : [...cur, slot]; return { ...a, days } })
+  }
+  function addSlot(d) {
+    const v = newSlot.trim(); if (!v) return
+    setAv(a => { const days = { ...(a.days || {}) }; days[d] = [...(days[d] || []), v]; return { ...a, days } })
+    setNewSlot('')
+  }
+  async function save() {
+    setBusy(true)
+    try { await store.saveLabAvailability(labId, av); toast('Availability saved. Food handlers will only be offered these times.') }
+    catch (e) { toast('Could not save availability: ' + (e.message || 'try again'), 'err') }
+    setBusy(false)
+  }
+  const openDays = Object.keys(av.days || {})
+  return (
+    <div className="page"><div className="wrap">
+      <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>Testing availability</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
+      <div className="note" style={{ marginBottom: 16 }}>Set the days you accept samples and the time slots on each day. Food handlers booking with you can only choose from these, which stops appointments landing when you are closed.</div>
+      {labs.length > 1 && (
+        <div className="field" style={{ maxWidth: 340 }}><label>Laboratory</label><select value={labId} onChange={e => { setLabId(e.target.value); loadFor(e.target.value) }}>{labs.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+      )}
+      <div className="card">
+        {WEEKDAYS.map(d => {
+          const on = !!(av.days || {})[d]
+          return (
+            <div key={d} style={{ borderBottom: '1px solid var(--line)', padding: '12px 0' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 600 }}>
+                <input type="checkbox" checked={on} onChange={() => toggleDay(d)} style={{ width: 18, height: 18 }} />
+                {d}
+              </label>
+              {on && (
+                <div style={{ marginTop: 10, paddingLeft: 28 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[...new Set([...DEFAULT_SLOTS, ...((av.days || {})[d] || [])])].map(sl => {
+                      const active = ((av.days || {})[d] || []).includes(sl)
+                      return <button key={sl} className={'btn sm' + (active ? ' p' : '')} onClick={() => toggleSlot(d, sl)}>{sl}</button>
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                    <input value={newSlot} onChange={e => setNewSlot(e.target.value)} placeholder="Add a slot, e.g. 16:00 to 18:00" style={{ padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 9, fontFamily: 'inherit', fontSize: 13, flex: 1, maxWidth: 260 }} />
+                    <button className="btn sm" onClick={() => addSlot(d)}>Add slot</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        <div className="field" style={{ marginTop: 14 }}><label>Note for applicants (optional)</label><input value={av.note || ''} onChange={e => setAv(a => ({ ...a, note: e.target.value }))} placeholder="e.g. Please arrive 15 minutes early with your SAFEPLATE ID" /></div>
+        <div className="row-between" style={{ marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
+          <span className="muted" style={{ fontSize: 13 }}>{openDays.length ? openDays.length + ' day' + (openDays.length === 1 ? '' : 's') + ' open for sampling' : 'No days set. Food handlers will see you as unavailable for booking.'}</span>
+          <button className="btn p" onClick={save} disabled={busy || !labId}>{busy ? 'Saving...' : 'Save availability'}</button>
+        </div>
+      </div>
+    </div></div>
+  )
+}
+
+function LaboratoryModule({ session, tab }) {
+  if (tab === 'availability') return <LabAvailability session={session} />
+  return <LabQueue session={session} />
+}
+
+function LabQueue({ session }) {
   const [accreditedLabs, setAccreditedLabs] = useState(() => labsView().filter(l => l.accredited))
   useEffect(() => { store.accreditedLabList().then(list => { if (list && list.length) setAccreditedLabs(list) }).catch(() => {}) }, [])
   const [labName, setLabName] = useState(() => { const a = labsView().filter(l => l.accredited); return a[0] ? a[0].name : '' })
@@ -2649,7 +2814,9 @@ function OrderCard({ order, lab, onAdvance, onRefresh }) {
   return (
     <div className="ord">
       <div className="top">
-        <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{order.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{order.safeplateId} · {order.id}</div></div>
+        <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{order.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{order.safeplateId} · {order.id}</div>
+          {(order.appointmentDate || order.appointment_date) && <div style={{ fontSize: 12.5, color: 'var(--green)', fontWeight: 600, marginTop: 3 }}>Appointment: {new Date(order.appointmentDate || order.appointment_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}{(order.appointmentSlot || order.appointment_slot) ? ', ' + (order.appointmentSlot || order.appointment_slot) : ''}</div>}
+        </div>
         <span className={'status ' + sk}>{order.status}</span>
       </div>
       {err && <div className="err" style={{ marginTop: 12 }}>{err}</div>}
@@ -2709,8 +2876,10 @@ function OfficersAdmin({ agency }) {
     if (!nf.name.trim() || !nf.email.trim()) return
     if (nf.phone && !/^0\d{10}$/.test(nf.phone.replace(/\s+/g, ''))) { toast('Enter a valid 11-digit phone number, e.g. 08031234567.', 'err'); return }
     if (nf.badge && officers.some(o => (o.badge || '') === nf.badge.trim())) { toast('That badge number is already in use.', 'err'); return }
-    await store.addOfficer({ ...nf, badge: nf.badge.trim(), target: Number(nf.target) || 20, agency, status: 'Active' })
-    setNf({ name: '', email: '', phone: '', badge: '', lga: '', target: '20' }); toast('Officer added to the roster.'); load()
+    try {
+      await store.addOfficer({ ...nf, badge: nf.badge.trim(), target: Number(nf.target) || 20, agency, status: 'Active' })
+      setNf({ name: '', email: '', phone: '', badge: '', lga: '', target: '20' }); toast('Officer added to the roster.'); load()
+    } catch (e) { toast('Could not add this officer: ' + (e.message || 'the server refused the change.'), 'err') }
   }
   async function approve(o) {
     const patch = pf[o.id] || {}
@@ -2724,10 +2893,12 @@ function OfficersAdmin({ agency }) {
       badge = agency + '-' + n
     }
     if (officers.some(x => x.id !== o.id && (x.badge || '') === badge)) { toast('That badge number is already in use. Enter a different one.', 'err'); return }
-    await store.updateOfficer(o.id, { status: 'Active', badge, lga: patch.lga || o.lga || '' })
-    toast('Officer approved and activated.'); load()
+    try {
+      await store.updateOfficer(o.id, { status: 'Active', badge, lga: patch.lga || o.lga || '' })
+      toast('Officer approved and activated.'); load()
+    } catch (e) { toast('Could not approve this officer: ' + (e.message || 'the server refused the change.'), 'err') }
   }
-  async function setStatus(o, status) { await store.updateOfficer(o.id, { status }); toast('Officer ' + status.toLowerCase() + '.'); load() }
+  async function setStatus(o, status) { try { await store.updateOfficer(o.id, { status }); toast('Officer ' + status.toLowerCase() + '.'); load() } catch (e) { toast('Could not update this officer: ' + (e.message || 'the server refused the change.'), 'err') } }
   if (!officers) return <div className="skelrow"><div className="skel" style={{ height: 74 }} /><div className="skel" style={{ height: 140 }} /></div>
   const pending = officers.filter(o => o.status === 'Pending')
   const active = officers.filter(o => o.status !== 'Pending')
@@ -3075,7 +3246,7 @@ function OfficerActivity({ session }) {
   )
 }
 
-function RegulatorHome({ session }) {
+function RegulatorHome({ session, onTab }) {
   const agency = session.agency || 'LSMoH'
   const [att, setAtt] = useState(null)
   useEffect(() => { (async () => {
@@ -3085,15 +3256,16 @@ function RegulatorHome({ session }) {
         const overdue = orders.filter(o => ['Scheduled', 'Sample Collected', 'Testing in Progress'].includes(o.status) && slaExceeded(o)).length
         const appeals = (await store.listAppeals('LSMoH').catch(() => [])).filter(a => a.status === 'Open').length
         const tickets = (await store.listTickets().catch(() => [])).filter(t => (t.status || 'Open') === 'Open').length
-        setAtt([{ n: submitted, label: 'results awaiting your review', tab: 'Review' }, { n: overdue, label: 'samples past the 48-hour laboratory SLA', tab: 'Review' }, { n: appeals, label: 'appeals to decide', tab: 'Review' }, { n: tickets, label: 'support requests open', tab: 'Review' }])
+        const cmp = (await store.listComplaints().catch(() => [])).filter(c => (c.status || 'Open') === 'Open').length
+        setAtt([{ n: submitted, label: 'results awaiting your review', tab: 'Review', go: 'review' }, { n: overdue, label: 'samples past the 48-hour laboratory SLA', tab: 'Review', go: 'review' }, { n: appeals, label: 'appeals to decide', tab: 'Review', go: 'review' }, { n: cmp, label: 'public reports open', tab: 'Complaints', go: 'complaints' }, { n: tickets, label: 'support requests open', tab: 'Review', go: 'review' }])
       } else if (agency === 'LASEPA') {
         const w = await store.listAllWaterTests(); const pending = w.filter(x => x.status === 'Submitted, pending LASEPA').length
         const appeals = (await store.listAppeals('LASEPA').catch(() => [])).filter(a => a.status === 'Open').length
         const complaints = (await store.listComplaints().catch(() => [])).filter(c => (c.status || 'Open') === 'Open').length
-        setAtt([{ n: pending, label: 'water results awaiting approval', tab: 'Water' }, { n: complaints, label: 'public reports to triage', tab: 'Complaints' }, { n: appeals, label: 'appeals to decide', tab: 'Enforcement' }])
+        setAtt([{ n: pending, label: 'water results awaiting approval', tab: 'Water', go: 'water' }, { n: complaints, label: 'public reports to triage', tab: 'Complaints', go: 'complaints' }, { n: appeals, label: 'appeals to decide', tab: 'Enforcement', go: 'enforcement' }])
       } else {
         const pend = (await store.listPendingLabs().catch(() => [])).length
-        setAtt([{ n: pend, label: 'laboratory registrations to approve', tab: 'Accreditation' }])
+        setAtt([{ n: pend, label: 'laboratory registrations to approve', tab: 'Accreditation', go: 'accreditation' }])
       }
     } catch (e) { setAtt([]) }
   })() /* eslint-disable-next-line */ }, [])
@@ -3104,7 +3276,7 @@ function RegulatorHome({ session }) {
         <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7', marginBottom: 16 }}>
           <b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>Needs your attention today</b>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-            {att.filter(a => a.n > 0).map((a, i) => <div key={i} className="attn-pill"><b style={{ fontSize: 18 }}>{a.n}</b> {a.label} <span className="muted">· {a.tab} tab</span></div>)}
+            {att.filter(a => a.n > 0).map((a, i) => <button key={i} className="attn-pill" onClick={() => onTab && a.go && onTab(a.go)} title={'Go to the ' + a.tab + ' tab'}><b style={{ fontSize: 18 }}>{a.n}</b> {a.label} <span className="muted">· open {a.tab}</span></button>)}
           </div>
         </div>
       )}
@@ -3114,18 +3286,18 @@ function RegulatorHome({ session }) {
   )
 }
 
-function RegulatorModule({ session, tab }) {
+function RegulatorModule({ session, tab, onTab }) {
   const agency = session.agency || 'LSMoH'
   const { guard, modal } = useGuard()
   async function audit(action, subject) { await store.appendAudit({ actor: session.name, role: agency, action, subject }) }
   return (
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
-      {tab === 'home' && <RegulatorHome session={session} />}
+      {tab === 'home' && <RegulatorHome session={session} onTab={onTab} />}
       {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} session={session} /><AppealsList agency="LASEPA" /></>}
-      {tab === 'complaints' && <ComplaintsQueue session={session} audit={audit} />}
+      {tab === 'complaints' && <ComplaintsQueue session={session} audit={audit} readOnly={agency === 'LSMoH'} />}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} session={session} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
@@ -3286,7 +3458,7 @@ function SearchBar({ value, onChange, placeholder, hint }) {
 }
 const smatch = (q, ...fields) => { const ql = (q || '').trim().toLowerCase(); return !ql || fields.filter(Boolean).join(' ').toLowerCase().includes(ql) }
 
-function ComplaintsQueue({ session, audit }) {
+function ComplaintsQueue({ session, audit, readOnly }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -3309,7 +3481,7 @@ function ComplaintsQueue({ session, audit }) {
         <div className="tile"><div className="v">{closed.length}</div><div className="k">Triaged</div></div>
         <div className="tile"><div className="v">{rows.length}</div><div className="k">Total received</div></div>
       </div>
-      <div className="note" style={{ marginBottom: 16 }}>Anonymous public reports. Each one schedules an inspection and marks the establishment as under review internally. A report is intelligence, not evidence, so it never applies a sanction on its own. Close it once an officer has looked.</div>
+      <div className="note" style={{ marginBottom: 16 }}>Anonymous public reports. Each one schedules an inspection and marks the establishment as under review internally. A report is intelligence, not evidence, so it never applies a sanction on its own.{readOnly ? ' You are viewing these for oversight. LASEPA triages and closes them.' : ' Close it once an officer has looked.'}</div>
       <SearchBar value={q} onChange={setQ} placeholder="Search reports by establishment, LGA or detail..." />
       {loading && <p className="muted">Loading reports...</p>}
       {!loading && open.length === 0 && <div className="placeholder">No open reports. Anything the public submits will appear here for triage.</div>}
@@ -3317,10 +3489,17 @@ function ComplaintsQueue({ session, audit }) {
         <div className="ord" key={c.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{c.establishment}</b><div className="muted" style={{ fontSize: 12.5 }}>{[c.lga, c.id].filter(Boolean).join(' · ')} · {timeAgo(c.createdAt || c.created_at)}</div></div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Open</span></div>
           <p style={{ fontSize: 14, margin: '10px 0' }}>{c.detail}</p>
-          <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
-            <button className="btn sm" onClick={() => decide(c, 'No further action')}>No further action</button>
-            <button className="btn p sm" onClick={() => decide(c, 'Inspection completed')}>Inspected, close</button>
-          </div>
+          {Array.isArray(c.photos) && c.photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              {c.photos.map((ph, i) => <a key={i} href={ph} target="_blank" rel="noreferrer"><img src={ph} alt={'Evidence ' + (i + 1)} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--line)' }} /></a>)}
+            </div>
+          )}
+          {!readOnly && (
+            <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <button className="btn sm" onClick={() => decide(c, 'No further action')}>No further action</button>
+              <button className="btn p sm" onClick={() => decide(c, 'Inspected, close')}>Inspected, close</button>
+            </div>
+          )}
         </div>
       ))}
       {closed.length > 0 && (<>
@@ -3884,7 +4063,7 @@ function Beneficiaries() {
   )
 }
 
-function SterlingModule({ session, tab }) {
+function SterlingModule({ session, tab, onTab }) {
   const { guard, modal } = useGuard()
   const [escrow, setEscrow] = useState([])
   const [releases, setReleases] = useState([])
@@ -3946,7 +4125,7 @@ function SterlingModule({ session, tab }) {
           <div className="tile"><div className="v">{pending.length}</div><div className="k">Awaiting release</div></div>
           <div className="tile"><div className="v">{naira(fundRemitted)}</div><div className="k">Fund remitted</div></div>
         </div>
-        {pending.length > 0 ? <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7', marginBottom: 16 }}><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>Needs your attention today</b><div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}><div className="attn-pill"><b style={{ fontSize: 18 }}>{pending.length}</b> approved payment{pending.length === 1 ? '' : 's'} awaiting release <span className="muted">· Batch release tab</span></div><div className="attn-pill"><b style={{ fontSize: 18 }}>{naira(sum(pending))}</b> total to disburse</div></div></div> : <div className="note" style={{ marginBottom: 16 }}>Nothing is awaiting release. Every Ministry-approved payment has been disbursed.</div>}
+        {pending.length > 0 ? <div className="ord" style={{ borderColor: 'var(--green)', background: '#f6faf7', marginBottom: 16 }}><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>Needs your attention today</b><div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}><button className="attn-pill" onClick={() => onTab && onTab('batch')} title="Go to the Batch release tab"><b style={{ fontSize: 18 }}>{pending.length}</b> approved payment{pending.length === 1 ? '' : 's'} awaiting release <span className="muted">· open Batch release</span></button><button className="attn-pill" onClick={() => onTab && onTab('releases')} title="Go to the Releases tab"><b style={{ fontSize: 18 }}>{naira(sum(pending))}</b> total to disburse <span className="muted">· open Releases</span></button></div></div> : <div className="note" style={{ marginBottom: 16 }}>Nothing is awaiting release. Every Ministry-approved payment has been disbursed.</div>}
         <Insights session={session} />
       </>)}
 
@@ -4831,10 +5010,10 @@ export default function App() {
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (eff.role === 'food_handler') return <FoodHandlerModule session={eff} />
-    if (eff.role === 'laboratory') return <LaboratoryModule session={eff} />
-    if (eff.role === 'regulator') return <RegulatorModule session={eff} tab={tab} />
+    if (eff.role === 'laboratory') return <LaboratoryModule session={eff} tab={tab} />
+    if (eff.role === 'regulator') return <RegulatorModule session={eff} tab={tab} onTab={setTab} />
     if (eff.role === 'officer') return <OfficerModule session={eff} tab={tab} />
-    if (eff.role === 'sterling') return <SterlingModule session={eff} tab={tab} />
+    if (eff.role === 'sterling') return <SterlingModule session={eff} tab={tab} onTab={setTab} />
     if (eff.role === 'employer') return <EmployerModule session={eff} tab={tab} />
     return null
   }

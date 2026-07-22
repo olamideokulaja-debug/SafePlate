@@ -99,7 +99,8 @@ Deno.serve(async (req) => {
       const { data: recent } = await db.from('complaints').select('id').eq('establishment', est).gte('created_at', since)
       if ((recent || []).length >= 5) return json({ error: 'Several reports about this establishment are already under review. Thank you.' }, 429)
       const ref = 'CMP-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 899999))
-      await db.from('complaints').insert({ id: ref, establishment: est, lga, detail, status: 'Open', created_at: new Date().toISOString() })
+      const photos = Array.isArray(body.photos) ? body.photos.slice(0, 4) : []
+      await db.from('complaints').insert({ id: ref, establishment: est, lga, detail, photos, status: 'Open', created_at: new Date().toISOString() })
       // Mark the establishment as under review (internal marker, not a sanction)
       // and schedule an inspection for an officer to pick up.
       const { data: match } = await db.from('establishments').select('id').ilike('name', est).maybeSingle()
@@ -108,7 +109,7 @@ Deno.serve(async (req) => {
         await db.from('inspections').insert({ id: 'INS-' + Date.now(), agency: 'LASEPA', kind: 'Complaint follow-up', subject: est, note: 'Scheduled from public complaint ' + ref, status: 'Scheduled', target_id: match.id })
       }
       await db.from('audit_log').insert({ actor: 'anonymous', role: 'public', action: 'Public complaint filed, inspection scheduled', subject: ref })
-      await db.from('notifications').insert({ audience: 'LASEPA', title: 'New public complaint', body: est + ' (' + ref + ')' })
+      await db.from('notifications').insert([{ audience: 'LASEPA', title: 'New public complaint', body: est + ' (' + ref + ')' }, { audience: 'LSMoH', title: 'New public complaint', body: est + ' (' + ref + ')' }])
       return json({ ok: true, reference: ref })
     }
   } catch (e) {

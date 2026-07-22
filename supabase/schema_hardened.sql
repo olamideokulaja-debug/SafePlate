@@ -567,3 +567,16 @@ alter table laboratories add column if not exists last_audit_outcome text;
 -- Accreditation number, issued by HEFAMAA when a laboratory is accredited.
 alter table laboratories add column if not exists acc_no text;
 create unique index if not exists laboratories_accno_uk on laboratories (acc_no) where acc_no is not null;
+
+-- Nigeria Data Protection Act: explicit consent recorded at registration.
+alter table food_handlers add column if not exists consent_given boolean default false;
+alter table food_handlers add column if not exists consent_at timestamptz;
+alter table food_handlers add column if not exists consent_version text;
+
+-- Evidence attached to a public complaint.
+alter table complaints add column if not exists photos jsonb;
+
+-- Laboratory testing availability, and the appointment booked against an order.
+alter table laboratories add column if not exists availability jsonb;
+alter table test_orders add column if not exists appointment_date date;
+alter table test_orders add column if not exists appointment_slot text;
