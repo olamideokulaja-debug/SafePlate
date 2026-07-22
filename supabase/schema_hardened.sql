@@ -541,3 +541,25 @@ create policy est_self_select on establishments for select to authenticated
 -- 48-hour laboratory turnaround breach markers.
 alter table test_orders add column if not exists sla_breached boolean default false;
 alter table test_orders add column if not exists sla_breached_at timestamptz;
+
+-- HEFAMAA laboratory accreditation audits (scored against a fixed criteria set).
+create table if not exists lab_audits (
+  id text primary key,
+  lab_id text, lab_name text, auditor text, auditor_email text,
+  answers jsonb, score numeric, applicable integer, met integer,
+  critical_failures jsonb, outcome text, note text,
+  valid_until timestamptz,
+  ts timestamptz default now()
+);
+alter table lab_audits enable row level security;
+drop policy if exists labaud_read on lab_audits;
+drop policy if exists labaud_insert on lab_audits;
+create policy labaud_read on lab_audits for select to authenticated
+  using (is_regulator() or is_officer() or auth_role() = 'laboratory');
+create policy labaud_insert on lab_audits for insert to authenticated
+  with check (is_regulator());
+
+-- Latest audit summary carried on the laboratory record for quick display.
+alter table laboratories add column if not exists last_audit_score numeric;
+alter table laboratories add column if not exists last_audit_at timestamptz;
+alter table laboratories add column if not exists last_audit_outcome text;

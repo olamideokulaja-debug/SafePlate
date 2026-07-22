@@ -582,6 +582,28 @@ const store = {
       throw new Error('Unknown queued action')
     })
   },
+  async createLabAudit(rec) {
+    const full = { id: 'QA-' + Date.now(), ts: new Date().toISOString(), ...rec }
+    if (SUPABASE_READY) {
+      const { error } = await supabase.from('lab_audits').insert(toSnake(full)); if (error) throw new Error(error.message)
+      await supabase.from('laboratories').update({ last_audit_score: full.score, last_audit_at: full.ts, last_audit_outcome: full.outcome }).eq('id', full.labId)
+      return full
+    }
+    const db = DEMO.read(); db.labAudits = db.labAudits || []; db.labAudits.unshift(full)
+    db.regLabs = db.regLabs || {}
+    if (db.regLabs[full.labId]) db.regLabs[full.labId] = { ...db.regLabs[full.labId], lastAuditScore: full.score, lastAuditAt: full.ts, lastAuditOutcome: full.outcome }
+    db.labAuditSummary = db.labAuditSummary || {}
+    db.labAuditSummary[full.labId] = { lastAuditScore: full.score, lastAuditAt: full.ts, lastAuditOutcome: full.outcome }
+    DEMO.write(db); return full
+  },
+  async listLabAudits(labId) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('lab_audits').select('*').eq('lab_id', labId).order('ts', { ascending: false }); return camelList(data) }
+    const db = DEMO.read(); return (db.labAudits || []).filter(a => a.labId === labId)
+  },
+  async labAuditSummary(labId) {
+    if (SUPABASE_READY) { const { data } = await supabase.from('lab_audits').select('*').eq('lab_id', labId).order('ts', { ascending: false }).limit(1); const a = data && data[0]; return a ? toCamel(a) : null }
+    const db = DEMO.read(); return (db.labAudits || []).find(a => a.labId === labId) || null
+  },
   async listBeneficiaries() {
     if (SUPABASE_READY) { const { data } = await supabase.from('beneficiaries').select('*'); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.beneficiaries || {})
@@ -3062,7 +3084,7 @@ function RegulatorModule({ session, tab }) {
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} session={session} /><AppealsList agency="LASEPA" /></>}
       {tab === 'complaints' && <ComplaintsQueue session={session} audit={audit} />}
-      {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} />}
+      {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} session={session} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
       {tab === 'audit' && <AuditPanel />}
@@ -3332,22 +3354,285 @@ async function escalate(e) {
   )
 }
 
-function Accreditation({ guard, audit }) {
+/* --------------------------------------------------------------------------
+   HEFAMAA laboratory accreditation criteria.
+
+   A structured checklist scored on inspection. Items marked critical are
+   non-negotiable: failing any one of them fails the audit outright, whatever
+   the overall percentage, because they are the conditions under which a result
+   cannot be trusted at all.
+
+   NOTE FOR HEFAMAA: this criteria set is drafted from standard medical
+   laboratory accreditation practice (MLSCN licensing, biosafety and quality
+   management). It must be reviewed and signed off by the Agency before live
+   use, and the wording here is deliberately easy to amend.
+-------------------------------------------------------------------------- */
+const LAB_QA_TEMPLATE = [
+  {
+    section: 'Legal status and licensing',
+    items: [
+      { id: 'L1', text: 'Current MLSCN licence for the facility, displayed and in date', critical: true },
+      { id: 'L2', text: 'Corporate Affairs Commission registration certificate available' },
+      { id: 'L3', text: 'HEFAMAA facility registration current for this premises', critical: true },
+      { id: 'L4', text: 'Premises address matches the address on the registration' }
+    ]
+  },
+  {
+    section: 'Personnel',
+    items: [
+      { id: 'P1', text: 'A registered Medical Laboratory Scientist is in charge of the laboratory', critical: true },
+      { id: 'P2', text: 'All scientific staff hold current practising licences' },
+      { id: 'P3', text: 'Staffing is sufficient for the stated daily sample capacity' },
+      { id: 'P4', text: 'Records of staff induction and continuing training are kept' },
+      { id: 'P5', text: 'Staff handling samples are vaccinated against Hepatitis B' }
+    ]
+  },
+  {
+    section: 'Premises and infrastructure',
+    items: [
+      { id: 'I1', text: 'Separate, clearly identified sample reception area' },
+      { id: 'I2', text: 'Work surfaces are non-porous, intact and disinfected between runs' },
+      { id: 'I3', text: 'Reliable power supply with backup for refrigeration' },
+      { id: 'I4', text: 'Running water and handwashing facilities in the working area', critical: true },
+      { id: 'I5', text: 'Adequate lighting and ventilation in the testing area' },
+      { id: 'I6', text: 'Clean and dirty zones are physically separated' }
+    ]
+  },
+  {
+    section: 'Equipment and reagents',
+    items: [
+      { id: 'E1', text: 'Microscope, centrifuge and analyser present and in working order', critical: true },
+      { id: 'E2', text: 'Documented calibration and servicing schedule, up to date' },
+      { id: 'E3', text: 'Refrigerator and freezer temperatures logged daily and within range' },
+      { id: 'E4', text: 'All reagents in date, correctly stored, with lot numbers recorded', critical: true },
+      { id: 'E5', text: 'Autoclave or validated alternative available and functioning' },
+      { id: 'E6', text: 'Backup arrangements documented for equipment failure' }
+    ]
+  },
+  {
+    section: 'Quality management',
+    items: [
+      { id: 'Q1', text: 'Written standard operating procedures for every test offered', critical: true },
+      { id: 'Q2', text: 'Internal quality control run at documented frequency, results retained' },
+      { id: 'Q3', text: 'Enrolled in an external quality assessment or proficiency scheme', critical: true },
+      { id: 'Q4', text: 'Corrective action recorded whenever quality control fails' },
+      { id: 'Q5', text: 'Documented criteria for rejecting an unusable sample' },
+      { id: 'Q6', text: 'Results reviewed and authorised by a qualified scientist before release' }
+    ]
+  },
+  {
+    section: 'Sample handling and turnaround',
+    items: [
+      { id: 'S1', text: 'Unique sample identification from receipt to result, no reuse of IDs', critical: true },
+      { id: 'S2', text: 'Chain of custody documented from collection to testing' },
+      { id: 'S3', text: 'Samples stored at the correct temperature before analysis' },
+      { id: 'S4', text: 'Turnaround time monitored against the 48-hour SafePlate standard' },
+      { id: 'S5', text: 'SafePlate IDs recorded against every sample received' }
+    ]
+  },
+  {
+    section: 'Biosafety and waste',
+    items: [
+      { id: 'B1', text: 'Personal protective equipment available and worn in the working area', critical: true },
+      { id: 'B2', text: 'Sharps containers in use and not overfilled' },
+      { id: 'B3', text: 'Spill kit available and staff trained in its use' },
+      { id: 'B4', text: 'Contract with a licensed medical waste handler, current', critical: true },
+      { id: 'B5', text: 'Segregated waste bins, correctly labelled' },
+      { id: 'B6', text: 'Incident and exposure log maintained' }
+    ]
+  },
+  {
+    section: 'Records and confidentiality',
+    items: [
+      { id: 'R1', text: 'Results archived and retrievable for the required retention period' },
+      { id: 'R2', text: 'Patient data held securely and access restricted to authorised staff', critical: true },
+      { id: 'R3', text: 'Laboratory register complete, legible and current' },
+      { id: 'R4', text: 'Complaints and their resolution recorded' }
+    ]
+  }
+]
+
+const QA_OUTCOMES = [
+  { min: 85, outcome: 'Accredited', months: 24, tone: 'ok', note: 'Full accreditation for 24 months.' },
+  { min: 70, outcome: 'Provisional', months: 6, tone: 'warn', note: 'Provisional accreditation for 6 months, re-audit required.' },
+  { min: 0, outcome: 'Not accredited', months: 0, tone: 'no', note: 'Below the accreditation threshold. The laboratory may not receive SafePlate samples.' }
+]
+
+function qaGrade(answers) {
+  const all = LAB_QA_TEMPLATE.flatMap(s => s.items)
+  const applicable = all.filter(i => (answers[i.id] || 'unanswered') !== 'na')
+  const answered = applicable.filter(i => ['met', 'not'].includes(answers[i.id]))
+  const met = applicable.filter(i => answers[i.id] === 'met')
+  const criticalFailures = all.filter(i => i.critical && answers[i.id] === 'not')
+  const score = applicable.length ? Math.round((met.length / applicable.length) * 100) : 0
+  let band = QA_OUTCOMES.find(o => score >= o.min) || QA_OUTCOMES[QA_OUTCOMES.length - 1]
+  if (criticalFailures.length) band = { ...QA_OUTCOMES[QA_OUTCOMES.length - 1], note: 'A critical requirement was not met, so the audit fails regardless of the overall score.' }
+  return { score, met: met.length, applicable: applicable.length, answered: answered.length, total: all.length, criticalFailures, band, complete: answered.length === applicable.length }
+}
+
+function generateQaReportPDF(rec, lab) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const W = doc.internal.pageSize.getWidth(), M = 54
+  let y = 56
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0, 51, 0)
+  doc.text('HEFAMAA LABORATORY ACCREDITATION AUDIT', W / 2, y, { align: 'center' }); y += 17
+  doc.setFontSize(10); doc.setTextColor(90, 90, 90); doc.setFont('helvetica', 'normal')
+  doc.text('Health Facility Monitoring and Accreditation Agency  ·  SafePlate', W / 2, y, { align: 'center' }); y += 24
+  doc.setDrawColor(0, 102, 0); doc.setLineWidth(1.3); doc.line(M, y, W - M, y); y += 24
+  doc.setFontSize(10.5); doc.setTextColor(40, 40, 40)
+  const row = (k, v) => { doc.setTextColor(110, 110, 110); doc.text(k, M, y); doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.text(String(v), M + 150, y); doc.setFont('helvetica', 'normal'); y += 17 }
+  row('Laboratory', lab.name)
+  row('Area', lab.area || lab.lga || 'Not recorded')
+  row('Audit reference', rec.id)
+  row('Auditor', rec.auditor)
+  row('Date', new Date(rec.ts).toLocaleString('en-GB'))
+  row('Score', rec.score + '% (' + rec.met + ' of ' + rec.applicable + ' applicable criteria met)')
+  row('Outcome', rec.outcome)
+  if ((rec.criticalFailures || []).length) row('Critical failures', String(rec.criticalFailures.length))
+  y += 10
+  LAB_QA_TEMPLATE.forEach(sec => {
+    if (y > 720) { doc.addPage(); y = 60 }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0, 51, 102)
+    doc.text(sec.section, M, y); y += 6
+    doc.setDrawColor(225, 225, 225); doc.line(M, y, W - M, y); y += 14
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5)
+    sec.items.forEach(it => {
+      if (y > 760) { doc.addPage(); y = 60 }
+      const a = (rec.answers || {})[it.id] || 'unanswered'
+      const label = a === 'met' ? 'Met' : a === 'not' ? 'NOT MET' : a === 'na' ? 'N/A' : 'Not answered'
+      if (a === 'not') doc.setTextColor(179, 38, 30); else if (a === 'met') doc.setTextColor(10, 107, 57); else doc.setTextColor(120, 120, 120)
+      doc.text(label, W - M, y, { align: 'right' })
+      doc.setTextColor(40, 40, 40)
+      const lines = doc.splitTextToSize((it.critical ? '[critical] ' : '') + it.text, W - 2 * M - 70)
+      lines.forEach((ln, i) => { doc.text(ln, M, y + i * 12) })
+      y += Math.max(14, lines.length * 12 + 2)
+    })
+    y += 8
+  })
+  if (rec.note) {
+    if (y > 700) { doc.addPage(); y = 60 }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(0, 51, 102); doc.text('Auditor notes', M, y); y += 14
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 40, 40)
+    doc.splitTextToSize(rec.note, W - 2 * M).forEach(ln => { if (y > 780) { doc.addPage(); y = 60 } doc.text(ln, M, y); y += 12 })
+  }
+  doc.save('HEFAMAA-QA-Audit-' + (lab.name || 'laboratory').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf')
+}
+
+function LabQaAudit({ lab, session, onDone, onCancel }) {
+  const [answers, setAnswers] = useState({})
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const g = qaGrade(answers)
+  const set = (id, v) => setAnswers(a => ({ ...a, [id]: v }))
+  function markAll(v) { const next = {}; LAB_QA_TEMPLATE.flatMap(x => x.items).forEach(i => { next[i.id] = v }); setAnswers(next) }
+  async function save() {
+    if (!g.complete) { toast('Answer every criterion, or mark it not applicable, before saving.', 'err'); return }
+    setBusy(true)
+    try {
+      const rec = await store.createLabAudit({
+        labId: lab.id, labName: lab.name, auditor: session.name, auditorEmail: session.email,
+        answers, score: g.score, applicable: g.applicable, met: g.met,
+        criticalFailures: g.criticalFailures.map(c => c.id), outcome: g.band.outcome, note,
+        validUntil: g.band.months ? new Date(Date.now() + g.band.months * 30 * 86400000).toISOString() : null
+      })
+      toast('QA audit saved: ' + g.score + '%, ' + g.band.outcome + '.')
+      onDone(rec, g)
+    } catch (e) { toast('Could not save the audit: ' + (e.message || 'try again'), 'err') }
+    setBusy(false)
+  }
+  return (
+    <div className="card" style={{ marginBottom: 18, borderColor: 'var(--navy)', borderWidth: 2 }}>
+      <div className="row-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div className="kicker" style={{ color: 'var(--navy)' }}>HEFAMAA QA audit</div>
+          <h3 className="serif" style={{ fontSize: 19, margin: '4px 0' }}>{lab.name}</h3>
+          <div className="muted" style={{ fontSize: 13 }}>Mark each criterion as met, not met, or not applicable. Criteria marked critical fail the audit outright if unmet.</div>
+        </div>
+        <div style={{ textAlign: 'right', minWidth: 150 }}>
+          <div style={{ fontFamily: 'Lora,serif', fontSize: 30, color: g.band.tone === 'ok' ? 'var(--green)' : g.band.tone === 'warn' ? '#9a6200' : '#b3261e' }}>{g.score}%</div>
+          <div className="muted" style={{ fontSize: 12 }}>{g.met} of {g.applicable} met · {g.answered}/{g.applicable} answered</div>
+          <span className={'pill ' + (g.band.tone === 'ok' ? 'ok' : 'no')} style={{ marginTop: 6, display: 'inline-block' }}>{g.band.outcome}</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
+        <button className="btn sm" onClick={() => markAll('met')}>Mark all met</button>
+        <button className="btn sm" onClick={() => setAnswers({})}>Clear</button>
+      </div>
+      {LAB_QA_TEMPLATE.map(sec => (
+        <div key={sec.section} style={{ marginBottom: 18 }}>
+          <h4 className="serif" style={{ fontSize: 15, margin: '0 0 8px', color: 'var(--navy)' }}>{sec.section}</h4>
+          {sec.items.map(it => {
+            const a = answers[it.id]
+            return (
+              <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 200, fontSize: 13.5 }}>
+                  {it.text}{it.critical && <span className="badge" style={{ background: '#fdeeee', color: '#b3261e', marginLeft: 8, fontSize: 10 }}>critical</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['met', 'Met'], ['not', 'Not met'], ['na', 'N/A']].map(([v, lbl]) => (
+                    <button key={v} className={'btn sm' + (a === v ? ' p' : '')} style={a === v && v === 'not' ? { background: '#b3261e', borderColor: '#b3261e', color: '#fff' } : undefined} onClick={() => set(it.id, v)}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      {g.criticalFailures.length > 0 && (
+        <div className="note" style={{ borderColor: '#b3261e', background: '#fdeeee', marginBottom: 12 }}>
+          <b>{g.criticalFailures.length} critical requirement{g.criticalFailures.length === 1 ? '' : 's'} not met.</b> This audit fails regardless of the overall score: {g.criticalFailures.map(c => c.id).join(', ')}.
+        </div>
+      )}
+      <div className="field"><label>Auditor notes</label><textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Findings, corrective actions required, and the date by which they must be completed." style={{ width: '100%', padding: '12px 14px', border: '1px solid var(--line)', borderRadius: 10, fontSize: 14.5, fontFamily: 'inherit' }} /></div>
+      <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <button className="btn sm" onClick={onCancel}>Cancel</button>
+        <button className="btn p sm" onClick={save} disabled={busy || !g.complete}>{busy ? 'Saving...' : g.complete ? 'Save audit (' + g.band.outcome + ')' : 'Answer all ' + g.applicable + ' criteria'}</button>
+      </div>
+    </div>
+  )
+}
+
+function Accreditation({ guard, audit, session }) {
   const [labs, setLabs] = useState(labsView())
   const [pending, setPending] = useState([])
   const [q, setQ] = useState('')
+  const [auditing, setAuditing] = useState(null)
+  const [summaries, setSummaries] = useState({})
   async function refreshLabs() {
-    try { setLabs(await store.allLabs()) } catch (e) { setLabs(labsView()) }
-    try { setPending(await store.listPendingLabs()) } catch (e) { setPending([]) }
+    let all = []
+    try { all = await store.allLabs(); setLabs(all) } catch (e) { all = labsView(); setLabs(all) }
+    let pend = []
+    try { pend = await store.listPendingLabs(); setPending(pend) } catch (e) { setPending([]) }
+    const map = {}
+    await Promise.all([...all, ...pend].map(async l => { try { const a = await store.labAuditSummary(l.id); if (a) map[l.id] = a } catch (e) { /* ignore */ } }))
+    setSummaries(map)
   }
+  function auditOf(l) { return summaries[l.id] || null }
+  function auditPassed(l) { const a = auditOf(l); return !!a && ['Accredited', 'Provisional'].includes(a.outcome) }
   useEffect(() => { refreshLabs() /* eslint-disable-next-line */ }, [])
   async function toggle(l) { await store.setLabAccredited(l.id, !l.accredited); await audit((l.accredited ? 'Accreditation suspended for ' : 'Accreditation granted for ') + l.name, l.name); refreshLabs() }
-  async function approveReg(l) { await store.approveLab(l.id); await audit('Laboratory accreditation approved for ' + l.name, l.name); toast(l.name + ' accredited. It can now receive samples.'); refreshLabs() }
+  async function approveReg(l) {
+    if (!auditPassed(l)) { toast('Run the QA audit first. A laboratory can only be accredited once it meets the criteria.', 'err'); return }
+    const a = auditOf(l)
+    await store.approveLab(l.id)
+    await audit('Laboratory accreditation approved for ' + l.name + ' (QA audit ' + a.score + '%, ' + a.outcome + ')', l.name)
+    toast(l.name + ' accredited. It can now receive samples.'); refreshLabs()
+  }
   async function declineReg(l) { await store.declineLab(l.id); await audit('Laboratory registration declined for ' + l.name, l.name); toast(l.name + ' registration declined.', 'warn'); refreshLabs() }
-  async function qa(l) { await audit('QA audit recorded', l.name) }
+  async function onAuditDone(rec, g) {
+    await audit('QA audit completed: ' + rec.score + '%, ' + rec.outcome + (g.criticalFailures.length ? ', ' + g.criticalFailures.length + ' critical failure(s)' : ''), rec.labName)
+    // A failed audit on an accredited laboratory suspends it immediately.
+    const lab = [...labs, ...pending].find(x => x.id === rec.labId)
+    if (lab && lab.accredited && rec.outcome === 'Not accredited') {
+      try { await store.setLabAccredited(lab.id, false); await audit('Accreditation suspended after failed QA audit', rec.labName); toast(rec.labName + ' suspended after a failed audit.', 'warn') } catch (e) { /* surfaced below */ }
+    }
+    setAuditing(null); refreshLabs()
+  }
   return (
     <div>
-      <div className="note" style={{ marginBottom: 16 }}>HEFAMAA accredits laboratories and records QA audits. Suspending accreditation removes a lab from the food handler booking list immediately.</div>
+      <div className="note" style={{ marginBottom: 16 }}>HEFAMAA accredits laboratories against a fixed set of criteria covering licensing, personnel, premises, equipment, quality management, sample handling, biosafety and records. A laboratory must pass the QA audit before it can be accredited, and a failed audit on an accredited laboratory suspends it at once. Suspension removes it from the food handler booking list immediately.</div>
+      <div className="note" style={{ marginBottom: 16, borderColor: 'var(--gold)', background: '#fdf8ee', fontSize: 13 }}>The criteria set is drafted from standard laboratory accreditation practice and needs HEFAMAA sign-off before live use. Scoring: 85% or above accredits for 24 months, 70 to 84% gives 6 months provisional, below 70% fails. Any unmet critical criterion fails the audit whatever the score.</div>
+      {auditing && <LabQaAudit lab={auditing} session={session} onDone={onAuditDone} onCancel={() => setAuditing(null)} />}
       {pending.length > 0 && (
         <div style={{ marginBottom: 22 }}>
           <h3 className="serif" style={{ fontSize: 17, marginBottom: 4 }}>Pending laboratory registrations</h3>
@@ -3355,9 +3640,19 @@ function Accreditation({ guard, audit }) {
           {pending.map(l => (
             <div className="ord" key={l.id}>
               <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{[l.lga || l.area, l.contactPerson, l.phone].filter(Boolean).join(' · ')}</div>{l.address && <div className="muted" style={{ fontSize: 12 }}>{l.address}</div>}</div><span className="badge" style={{ background: '#fdf1dd', color: '#9a6200' }}>Pending</span></div>
-              <div className="row-between" style={{ marginTop: 12 }}>
+              {auditOf(l) ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', flexWrap: 'wrap' }}>
+                  <span className={'pill ' + (auditPassed(l) ? 'ok' : 'no')}>QA audit {auditOf(l).score}% · {auditOf(l).outcome}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{timeAgo(auditOf(l).ts)}</span>
+                  <button className="btn sm" onClick={() => generateQaReportPDF(auditOf(l), l)}>Audit report</button>
+                </div>
+              ) : <div className="muted" style={{ fontSize: 12.5, margin: '10px 0' }}>No QA audit on record. The laboratory cannot be accredited until it passes one.</div>}
+              <div className="row-between" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
                 <button className="btn sm danger" onClick={() => guard('Decline registration for ' + l.name, () => declineReg(l))}>Decline</button>
-                <button className="btn p sm" onClick={() => guard('Accredit ' + l.name, () => approveReg(l))}>Approve accreditation</button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn sm" onClick={() => setAuditing(l)}>{auditOf(l) ? 'Re-run QA audit' : 'Run QA audit'}</button>
+                  <button className="btn p sm" onClick={() => guard('Accredit ' + l.name, () => approveReg(l))} disabled={!auditPassed(l)}>Approve accreditation</button>
+                </div>
               </div>
             </div>
           ))}
@@ -3369,8 +3664,15 @@ function Accreditation({ guard, audit }) {
       {labs.filter(l => smatch(q, l.name, l.area, l.accNo)).map(l => (
         <div className="ord" key={l.id}>
           <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{l.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{l.area} · {l.accNo || 'no accreditation number'}</div></div><span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span></div>
-          <div className="row-between" style={{ marginTop: 12 }}>
-            <button className="btn sm" onClick={() => guard('Record QA audit for ' + l.name, () => qa(l))}>Record QA audit</button>
+          {auditOf(l) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0', flexWrap: 'wrap' }}>
+              <span className={'pill ' + (auditPassed(l) ? 'ok' : 'no')}>QA audit {auditOf(l).score}% · {auditOf(l).outcome}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{timeAgo(auditOf(l).ts)}</span>
+              <button className="btn sm" onClick={() => generateQaReportPDF(auditOf(l), l)}>Audit report</button>
+            </div>
+          )}
+          <div className="row-between" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
+            <button className="btn sm" onClick={() => setAuditing(l)}>{auditOf(l) ? 'Re-run QA audit' : 'Run QA audit'}</button>
             <button className={'btn sm ' + (l.accredited ? 'danger' : 'p')} onClick={() => guard((l.accredited ? 'Suspend accreditation for ' : 'Grant accreditation to ') + l.name, () => toggle(l))}>{l.accredited ? 'Suspend accreditation' : 'Grant accreditation'}</button>
           </div>
         </div>
