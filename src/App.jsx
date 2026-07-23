@@ -2464,6 +2464,23 @@ function FoodHandlerModule({ session }) {
   const draftKey = 'sp_draft_' + (session.email || 'anon')
   const [draft, setDraft] = useState(null)
   const [avail, setAvail] = useState(null)
+  const [availMap, setAvailMap] = useState({})
+  useEffect(() => {
+    if (step !== 2 || !labs.length) return
+    let cancelled = false
+    Promise.all(labs.filter(l => l.accredited).map(async l => {
+      try { const a = await store.getLabAvailability(l.id); return [l.id, a && a.days ? a : null] } catch (e) { return [l.id, null] }
+    })).then(pairs => { if (!cancelled) setAvailMap(Object.fromEntries(pairs)) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line
+  }, [step, labs])
+  function openDaysLabel(labId) {
+    const a = availMap[labId]
+    if (!a || !a.days) return null
+    const names = WEEKDAYS.filter(d => (a.days[d] || []).length)
+    if (!names.length) return null
+    return names.map(d => d.slice(0, 3)).join(', ')
+  }
   const [paymentRef, setPaymentRef] = useState('')
   const [paidStamp, setPaidStamp] = useState('')
   const [labs, setLabs] = useState(() => labsView())
@@ -2611,7 +2628,11 @@ function FoodHandlerModule({ session }) {
           <p className="muted" style={{ marginTop: 4 }}>Accreditation is checked in real time. Unaccredited labs cannot take your order.</p>
           {labs.map(l => (
             <button key={l.id} className={'lab-row ' + (l.accredited ? '' : 'off')} onClick={() => chooseLab(l)}>
-              <span><b style={{ fontFamily: 'Lora,serif' }}>{l.name}</b><div className="meta">{l.area} · results in {l.turnaround}{l.mobile ? ' · mobile collection' : ''}</div></span>
+              <span><b style={{ fontFamily: 'Lora,serif' }}>{l.name}</b><div className="meta">{l.area} · results in {l.turnaround}{l.mobile ? ' · mobile collection' : ''}</div>
+                {l.accredited && (openDaysLabel(l.id)
+                  ? <div className="meta" style={{ color: 'var(--green)', fontWeight: 600 }}>Sampling days: {openDaysLabel(l.id)}</div>
+                  : <div className="meta">No published appointment times</div>)}
+              </span>
               <span className={'pill ' + (l.accredited ? 'ok' : 'no')}>{l.accredited ? 'Accredited' : 'Not accredited'}</span>
             </button>
           ))}
@@ -4301,6 +4322,25 @@ function EmployerTeam({ session }) {
   const [sName, setSName] = useState('')
   const [sPhone, setSPhone] = useState('')
   const [msgErr, setMsgErr] = useState(false)
+  const [labs, setLabs] = useState([])
+  const [labId, setLabId] = useState('')
+  const [avail, setAvail] = useState(null)
+  const [appt, setAppt] = useState({ date: '', slot: '' })
+  useEffect(() => { store.accreditedLabList().then(l => { setLabs(l); if (l.length && !labId) pickLab(l[0].id, l) }).catch(() => {}) /* eslint-disable-next-line */ }, [])
+  async function pickLab(id, list) {
+    setLabId(id); setAppt({ date: '', slot: '' }); setAvail(null)
+    try { const a = await store.getLabAvailability(id); setAvail(a && a.days && Object.keys(a.days).length ? a : null) } catch (e) { setAvail(null) }
+  }
+  function bookableDates() {
+    if (!avail || !avail.days) return []
+    const out = []
+    for (let i = 1; i <= 21; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i)
+      const nm = WEEKDAYS[(d.getDay() + 6) % 7]
+      if ((avail.days[nm] || []).length) out.push({ iso: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), day: nm })
+    }
+    return out
+  }
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -4350,17 +4390,21 @@ function EmployerTeam({ session }) {
     setBusy(true); setMsg(''); setMsgErr(false)
     const pending = biz.staff.filter(x => x.status === 'Not registered')
     if (!pending.length) { setMsgErr(true); setMsg('No unregistered staff to enrol.'); setBusy(false); return }
+    const chosen = labs.find(l => l.id === labId)
+    if (!chosen) { setMsgErr(true); setMsg('Choose the laboratory your team will attend.'); setBusy(false); return }
+    const chosenLabName = chosen.name
+    if (avail && (!appt.date || !appt.slot)) { setMsgErr(true); setMsg('Choose an appointment date and time slot at ' + chosenLabName + ' before paying.'); setBusy(false); return }
     try {
       if (SUPABASE_READY) {
         if (PAYSTACK_READY) { await payWithPaystack({ email: session.email, amountNaira: pending.length * FEE, reference: 'EMP-' + Date.now() }) }
-        const res = await store.fn('bulk-enroll', { staff: pending.map(x => ({ name: x.name, phone: x.phone })), lab: 'Lancet Ikeja', employer: session.email })
+        const res = await store.fn('bulk-enroll', { staff: pending.map(x => ({ name: x.name, phone: x.phone })), lab: chosenLabName, appointmentDate: appt.date || null, appointmentSlot: appt.slot || null, employer: session.email })
         const created = (res && res.created) || []
         created.forEach(c => { const m = biz.staff.find(x => x.status === 'Not registered' && x.name === c.name && x.phone === c.phone); if (m) { m.safeplateId = c.safeplateId; m.status = 'Pending results' } })
       } else {
         for (const x of pending) {
           const id = makeSafeplateId()
-          await store.createOrder({ id: 'ORD-' + id.replace('SP-LG-', ''), safeplateId: id, handlerName: x.name, phone: x.phone, lab: 'Lancet Ikeja', tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
-          await store.createEscrow({ safeplateId: id, name: x.name, lab: 'Lancet Ikeja', amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
+          await store.createOrder({ id: 'ORD-' + id.replace('SP-LG-', ''), safeplateId: id, handlerName: x.name, phone: x.phone, lab: chosenLabName, tests: MANDATORY_TESTS, status: 'Scheduled', appointmentDate: appt.date || null, appointmentSlot: appt.slot || null, createdAt: new Date().toISOString() })
+          await store.createEscrow({ safeplateId: id, name: x.name, lab: chosenLabName, amount: FEE, status: 'HELD', type: 'FOOD', ts: new Date().toISOString() })
           x.safeplateId = id; x.status = 'Pending results'
         }
       }
@@ -4447,9 +4491,41 @@ function EmployerTeam({ session }) {
       <AppealButton kind="establishment" subject={biz.name} agency="LASEPA" by={session.email} label="Appeal a sanction or compliance decision" />
 
       {pendingCount > 0 && (
-        <div className="row-between" style={{ marginBottom: 14 }}>
-          <span className="muted" style={{ fontSize: 13.5 }}>{pendingCount} member{pendingCount === 1 ? '' : 's'} not yet registered.</span>
-          <button className="btn p sm" onClick={bulkPay} disabled={busy}>{busy ? 'Processing...' : 'Register & bulk-pay ' + naira(pendingCount * FEE)}</button>
+        <div className="card" style={{ marginBottom: 14 }}>
+          <h3 className="serif" style={{ fontSize: 17, marginTop: 0 }}>Book testing for your team</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Choose the laboratory your staff will attend and, where the laboratory publishes times, the appointment slot. Everyone in this batch is booked together.</p>
+          <div className="field"><label>Laboratory</label>
+            <select value={labId} onChange={e => pickLab(e.target.value, labs)}>
+              {labs.length === 0 && <option value="">No accredited laboratories available</option>}
+              {labs.map(l => <option key={l.id} value={l.id}>{l.name}{l.area ? ' (' + l.area + ')' : ''}</option>)}
+            </select>
+          </div>
+          {avail ? (
+            <>
+              <div className="field"><label>Appointment date</label>
+                <select value={appt.date} onChange={e => setAppt({ date: e.target.value, slot: '' })}>
+                  <option value="">Select a date</option>
+                  {bookableDates().map(d => <option key={d.iso} value={d.iso}>{d.label}</option>)}
+                </select>
+              </div>
+              {appt.date && (() => {
+                const chosen = bookableDates().find(d => d.iso === appt.date)
+                const slots = chosen ? (avail.days[chosen.day] || []) : []
+                return (
+                  <div className="field"><label>Time slot</label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {slots.map(sl => <button key={sl} className={'btn sm' + (appt.slot === sl ? ' p' : '')} onClick={() => setAppt(a => ({ ...a, slot: sl }))}>{sl}</button>)}
+                    </div>
+                  </div>
+                )
+              })()}
+              {avail.note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{avail.note}</div>}
+            </>
+          ) : labId ? <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>This laboratory has not published appointment times. Contact them directly to arrange when your team should attend.</div> : null}
+          <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <span className="muted" style={{ fontSize: 13.5 }}>{pendingCount} member{pendingCount === 1 ? '' : 's'} not yet registered.</span>
+            <button className="btn p sm" onClick={bulkPay} disabled={busy}>{busy ? 'Processing...' : 'Register & bulk-pay ' + naira(pendingCount * FEE)}</button>
+          </div>
         </div>
       )}
 

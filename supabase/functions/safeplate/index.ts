@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
         const id = 'SP-LG-' + year + String(Math.floor(100000 + Math.random() * 899999))
         const oid = 'ORD-' + year + '-' + id.slice(-6) + '-' + i
         await db.from('food_handlers').upsert({ safeplate_id: id, name: st.name, phone: st.phone, employer: body.employer || me.email, created_at: new Date().toISOString() }, { onConflict: 'safeplate_id' })
-        await db.from('test_orders').insert({ id: oid, safeplate_id: id, handler_name: st.name, phone: st.phone, lab, tests, status: 'Scheduled', created_at: new Date().toISOString() })
+        await db.from('test_orders').insert({ id: oid, safeplate_id: id, handler_name: st.name, phone: st.phone, lab, tests, status: 'Scheduled', appointment_date: body.appointmentDate || null, appointment_slot: body.appointmentSlot || null, created_at: new Date().toISOString() })
         await db.from('escrow').insert({ safeplate_id: id, name: st.name, lab, amount: FEE, type: 'FOOD', status: 'HELD', ts: new Date().toISOString() })
         created.push({ name: st.name, phone: st.phone, safeplateId: id })
       }
