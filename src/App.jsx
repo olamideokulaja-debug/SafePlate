@@ -2465,6 +2465,13 @@ function FoodHandlerModule({ session }) {
   const [draft, setDraft] = useState(null)
   const [avail, setAvail] = useState(null)
   const [availMap, setAvailMap] = useState({})
+  const [paymentRef, setPaymentRef] = useState('')
+  const [paidStamp, setPaidStamp] = useState('')
+  const [labs, setLabs] = useState(() => labsView())
+  useEffect(() => { store.allLabs().then(setLabs).catch(() => {}) }, [])
+  // Must come after `labs` is declared: a dependency array referencing a
+  // const declared later in the component throws a temporal dead zone error
+  // on every render, which blanks the whole portal.
   useEffect(() => {
     if (step !== 2 || !labs.length) return
     let cancelled = false
@@ -2481,10 +2488,6 @@ function FoodHandlerModule({ session }) {
     if (!names.length) return null
     return names.map(d => d.slice(0, 3)).join(', ')
   }
-  const [paymentRef, setPaymentRef] = useState('')
-  const [paidStamp, setPaidStamp] = useState('')
-  const [labs, setLabs] = useState(() => labsView())
-  useEffect(() => { store.allLabs().then(setLabs).catch(() => {}) }, [])
   useEffect(() => {
     if (!showWizard || renewing || step === 0 || step >= 4) return
     try { localStorage.setItem(draftKey, JSON.stringify({ form, step, savedAt: Date.now() })) } catch (e) { /* storage unavailable */ }
