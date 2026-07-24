@@ -1,185 +1,133 @@
-# Realms Field — Stages 1 and 2
+# SafePlate
 
-The public Realms website for REALMS Healthcare Services Consulting Limited, plus staff sign-in and the role-aware workspace. A Vite + React + Supabase project, built as a single-file `src/App.jsx`, ready to deploy to Vercel.
+The Lagos State Unified Food Handler Safety and Compliance Platform. This package covers all nine stages of the build plan, plus the public certificate verification portal.
 
-## What is in this build
-- **Tabbed public site.** The top bar has a tab for each page (Home, Process, Services, About, Contact) so each page stands alone with limited scrolling.
-- **Staff sign-in (Stage 2).** Sign in or create an account, then choose your role from five cards: Team Leader, Field Monitor, RHSC HQ, HEFAMAA Reviewer, Facility Proprietor.
-- **Per-user identity.** Each signed-in person is greeted by name and role. You can map specific emails to a name and title in the `IDENTITY` object in `src/App.jsx`.
-- **Role-aware dashboard.** Each role sees its own set of tools, tagged with the stage in which they unlock.
-- Brand-locked to Lora and RHSC purple on white, using your real logo from `public/`.
+Built as a single-file React app (`src/App.jsx`) on Vite + React + Supabase, deployed to Vercel, exactly like the Qura and Cooperatives builds. Navigation mirrors the CoopEco pattern: every page is a tab in the top banner, and each tab opens a full page, so there is no long scrolling. The Lagos State coat of arms is the platform mark.
 
-## Demo mode vs real accounts
-The app runs in **demo mode** until you add Supabase keys. In demo mode, any email signs in (no password needed) and the role is saved in the browser, so you can preview the whole flow immediately. Once you add the two keys below, it switches automatically to **real Supabase accounts**.
+## What works right now
 
-## Two things to complete before publishing
-1. **Coverage figures.** In `src/App.jsx`, find `EDIT: replace each value with a verified figure` and replace each dash on the Home tab.
-2. **Contact details.** In `src/App.jsx`, find `EDIT: add real contact details` on the Contact tab.
+- Stage 1: public landing with the four pillars, the health and economy case, live compliance figures, and a working certificate verifier.
+- Stage 2: role entry for Food Handler, Employer, Approved Laboratory, Regulator (LSMoH / LASEPA / HEFAMAA) and Sterling Bank, with Supabase sign-in and a role-aware dashboard. Ministry and Sterling Bank logins are marked for 2FA.
+- Stage 3: the food handler journey from registration (with a SAFEPLATE ID) through the mandatory test panel, accredited laboratory choice, and a Paystack payment into escrow, with the full waterfall shown.
+- Stage 4: the laboratory portal. Sign in as Approved Laboratory to see that lab's own order queue, move an order through Sample Collected, Testing in Progress and Submitted, upload per-test pass or refer results with technician ID, accreditation number and a result PDF, and handle exceptions (no show, spoiled sample, accreditation-number mismatch quarantine). A refer result reports to LSMoH and routes the sample to the Lagos Biobank for confirmation.
+- Stage 5: three separate regulator portals, chosen by agency at sign-in. LSMoH reviews submitted results and approves or flags; an approval issues the certificate (so the public verifier then shows it as valid) and records a signed escrow-release instruction, while a refer result triggers the referral pathway. LASEPA runs the escalating sanctions ladder (warning, fine, temporary closure, loss of operating licence) with an appeals pathway. HEFAMAA grants or suspends laboratory accreditation and records QA audits. Every sensitive action is confirmed by a 2FA code and written to an append-only audit trail that can be exported as a tamper-evident report. A 48-hour review SLA is flagged when exceeded.
+- Stage 6: the Sterling Bank escrow ledger. Balance, released-to-date, fund-remitted and pending-release tiles; a full ledger; a Releases tab that executes an approved instruction by disbursing the full 76.5 / 10 / 5 / 5 / 3.5 waterfall atomically (2FA-gated and audited); a Fund tab tracking the oversight remittance; and reconciliation by SAFEPLATE ID. Sterling never sees results or medical data.
+- Stage 8: the employer portal and the potable water module. An employer registers their establishment, adds team members, and registers-and-bulk-pays for pending staff in one action, seeing each member's compliance status without any medical detail. The water workstream lets a facility register (with a SAFEPLATE-W ID), choose a LASEPA-accredited lab and pay the ₦65,000 into escrow; LASEPA then reviews the readings against WHO and NAFDAC benchmarks and, on approval, issues a Facility Water Quality Certificate and disburses the 80 / 10 / 5 / 5 waterfall. Water certificates are publicly verifiable by their SAFEPLATE-W ID.
+- Stage 9: notifications, fees transparency and analytics. A notifications bell in the top banner shows role-relevant alerts raised by every lifecycle event (new order, results submitted, certificate issued, release instructed, water certified). A public Fees page publishes both fee structures and their full waterfalls. An LSMoH Analytics tab shows live escrow figures alongside the five-year project economics (facility ramp, food and water fees, and cumulative programme revenue of ₦14.9bn).
+- Public verification: anyone can check a certificate by ID, or by scanning its QR. Seeded IDs: `SP-LG-2026004821` (valid), `SP-LG-2025008114` (expired), `SP-LG-2026001990` (revoked).
 
-## Set up Supabase (for real accounts)
-1. Create a free project at supabase.com.
-2. In the project, open **Project Settings → API** and copy the Project URL and the anon public key.
-3. In Vercel, open your project's **Settings → Environment Variables** and add:
-   - `VITE_SUPABASE_URL` = your Project URL
-   - `VITE_SUPABASE_ANON_KEY` = your anon public key
-4. In Supabase, open the **SQL Editor** and run this once to create the store for roles:
+All nine stages are built and the full loops run end to end. Food handler: register and pay, lab submits, LSMoH approves and issues the certificate and instructs release, Sterling releases the waterfall, the public verifier confirms it. Water: facility registers and pays, LASEPA reviews against benchmarks and approves, the water certificate issues and the 80/10/5/5 waterfall disburses, and the certificate verifies publicly. Notifications, fees transparency and analytics are in. Connecting the Supabase and Paystack keys switches the app from preview to live with no code change.
 
-```sql
-create table if not exists kv (
-  user_id uuid references auth.users(id) on delete cascade,
-  k text not null,
-  v jsonb,
-  updated_at timestamptz default now(),
-  primary key (user_id, k)
-);
-alter table kv enable row level security;
-create policy "own rows" on kv
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+## Preview mode vs connected mode
+
+The app runs immediately with no backend, using a safe in-browser preview store, so you can review the whole flow. When you add the Supabase and Paystack keys below, it switches to the real backend automatically. No code change needed.
+
+## Deploy to Vercel, one step at a time
+
+You do not need to write any code.
+
+1. Create a free account at github.com and at vercel.com if you do not have one.
+2. On GitHub, click the plus icon, top right, then "New repository". Name it `safeplate`. Click "Create repository".
+3. On the new repository page, click "uploading an existing file". Drag in every file and folder from this project EXCEPT `node_modules`, `dist` and `.vercel` (they are not needed and are rebuilt automatically). Click "Commit changes".
+4. Go to vercel.com, click "Add New", then "Project". Choose "Import" next to your `safeplate` repository.
+5. Leave the settings as they are (Vercel detects Vite automatically) and click "Deploy". Wait for it to finish. You now have a live link.
+
+## Add the keys, when you are ready to go live
+
+In Vercel, open your project, then Settings, then Environment Variables. Add these, then redeploy (Deployments tab, click the three dots on the latest, "Redeploy").
+
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, from your Supabase project (Project Settings, API). These are safe to be public.
+- `ANTHROPIC_API_KEY`, server only, for the AI Engine. Never shared with the browser.
+- `PAYSTACK_SECRET_KEY`, server only, for verifying payments. Never shared with the browser.
+
+## Supabase tables to create (when connecting the backend)
+
+- `food_handlers`: `safeplate_id` (text, primary key), `name`, `phone`, `nin`, `email`, `employer`, `lab`, `tests`, `fee`, `paid`, `created_at`.
+- `certificates`: `safeplate_id` (text, primary key), `name`, `panel`, `lab`, `issued`, `expiry`, `status`.
+- `test_orders`: `id` (text, primary key), `safeplate_id`, `handler_name`, `phone`, `lab`, `tests`, `status`, `results`, `technician_id`, `accreditation_number`, `created_at`.
+- `audit_log`: append only, no UPDATE or DELETE granted. `ts`, `actor`, `role`, `action`, `subject`, `ip`.
+- `escrow_releases`: `safeplate_id`, `lab`, `amount`, `status`, `approved_by`, `ts`.
+- `establishments`: `id`, `name`, `lga`, `compliance`, `sanction`, `appeal`.
+- `laboratories`: `id`, `name`, `area`, `accredited`, `acc_no`.
+- `escrow`: `safeplate_id` (primary key), `name`, `lab`, `amount`, `type` (FOOD or WATER), `status` (HELD or RELEASED), `ts`, `released_ts`, `released_by`.
+- `businesses`: `owner_email` (primary key), `name`, `lga`, `staff` (json).
+- `water_tests`: `swid` (primary key), `facility`, `lga`, `source`, `officer`, `contact`, `lab`, `amount`, `status`, `results` (json), `cert_series`, `owner_email`, `ts`.
+- `notifications`: `audience`, `title`, `body`, `ts`.
+
+Keep test result fields encrypted and make `audit_log` append only, as set out in the security section of the build prompt.
+
+## Run locally (optional)
+
+```
+npm install
+npm run dev
 ```
 
-5. Optional: in **Authentication → Providers → Email**, turn email confirmation on or off to suit your rollout.
-6. Redeploy on Vercel so the new environment variables take effect.
+Open the local address it prints. To check a production build:
 
-## Run it on your computer (optional)
-1. Install Node.js 18 or newer from nodejs.org.
-2. Open a terminal in this folder.
-3. Type `npm install`, then `npm run dev`, and open the address it prints.
-
-## Put it online with Vercel
-1. Create free accounts at github.com and vercel.com.
-2. On GitHub, create a new repository named `realms-field`.
-3. Upload every file and folder from this project **including the `public` folder**, but not `node_modules`, `dist` or `.vercel`.
-4. On Vercel, **Add New… → Project**, import the repository, leave the detected Vite settings, and **Deploy**.
-5. Add the two environment variables above when you are ready for real accounts, then redeploy.
-
-## Next stage
-Stage 3 (Map) adds facility-list ingestion, area clustering and route planning onto the Field Monitor and Team Leader dashboards.
-
-## Troubleshooting a blank page
-A blank page almost always means a bad Supabase value. This build now falls back to demo mode instead of blanking, so if the site loads but shows the small "Demo mode" note on the sign-in screen, your keys did not take. Check in Vercel:
-- `VITE_SUPABASE_URL` begins with `https://` and ends in `.supabase.co`, with no quotes or spaces.
-- `VITE_SUPABASE_ANON_KEY` is the long anon public key, pasted whole with no line breaks.
-- Both are set for the Production environment, then redeploy so the new values are built in.
-To see the exact issue, open the site, press F12, and read the Console tab. A line starting with "Realms:" will name the problem.
-
-## Stage 3 (Map) setup
-Stage 3 adds Facilities, a Map & Route view and Team Leader assignment. In demo mode these save in the browser. For real accounts, run this once in the Supabase SQL Editor (paste from `create` to the last `);`, without the code fences):
-
-```sql
-create table if not exists facilities (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  category text,
-  area text,
-  address text,
-  lat double precision,
-  lng double precision,
-  last_visit date,
-  created_by uuid references auth.users(id),
-  created_at timestamptz default now()
-);
-alter table facilities enable row level security;
-create policy "auth read facilities" on facilities for select using (auth.uid() is not null);
-create policy "auth write facilities" on facilities for insert with check (auth.uid() is not null);
-create policy "auth update facilities" on facilities for update using (auth.uid() is not null);
-create policy "auth delete facilities" on facilities for delete using (auth.uid() is not null);
-
-create table if not exists assignments (
-  id uuid primary key default gen_random_uuid(),
-  visit_date date,
-  area text,
-  facility_ids jsonb,
-  note text,
-  created_by uuid references auth.users(id),
-  created_at timestamptz default now()
-);
-alter table assignments enable row level security;
-create policy "auth all assignments" on assignments for all using (auth.uid() is not null) with check (auth.uid() is not null);
+```
+npm run build
 ```
 
-### Importing facilities by CSV
-Use a header row with any of these columns (only `name` is required): `name, category, area` (or `lga`), `address, lat, lng, last_visit`. If a row has `lat` and `lng`, it appears on the map straight away. Rows without coordinates can be placed later with the Locate button, which looks the address up on OpenStreetMap.
+You should see `built` with no errors.
 
-### Maps and directions
-The map uses OpenStreetMap, so it needs no API key. Build route orders the stops for the shortest hop-to-hop path, and Open in Google Maps hands the ordered stops to the Google Maps app for turn-by-turn on the day. If you later want in-app Google directions, that is a small addition and will need a Google Maps key.
 
-## Stage 4 (Engage) setup
-Stage 4 adds the arrival check-in, saved as a visit. In demo mode visits save in the browser. For real accounts, run this once in the Supabase SQL Editor:
+## Going live, step by step
 
-```sql
-create table if not exists visits (
-  id uuid primary key default gen_random_uuid(),
-  facility_id text,
-  facility_name text,
-  area text,
-  status text default 'engaged',
-  arrival_time timestamptz,
-  lat double precision,
-  lng double precision,
-  team jsonb,
-  person_in_charge jsonb,
-  greeting_confirmed boolean default false,
-  created_by uuid references auth.users(id),
-  created_at timestamptz default now()
-);
-alter table visits enable row level security;
-create policy "auth all visits" on visits for all using (auth.uid() is not null) with check (auth.uid() is not null);
-```
+The app runs in preview with no backend. It switches to live automatically as each key is added, no code change.
 
-The Engage tab appears for Field Monitor and Team Leader. It walks four steps: choose the facility, confirm arrival and capture location, present the monitoring letter and team ID cards with the introduction script, then record the person in charge and confirm the greeting. Location capture uses the browser and needs the site on https, which Vercel provides. The assessment checklist that follows arrives in Stage 5.
+1. Create a Supabase project at supabase.com. Open the SQL editor and run the contents of `supabase/schema.sql`. This creates every table, enables row level security, makes the audit log append-only, and seeds the accredited laboratory list.
+2. In Supabase, open Project Settings then API. Copy the Project URL and the anon public key.
+3. Create a Paystack account at paystack.com. From Settings then API Keys, copy your public key and your secret key.
+4. Create a Termii account at termii.com. Copy your API key and register a sender ID.
+5. In Vercel, open your project then Settings then Environment Variables, and add:
+   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (frontend, safe to be public)
+   - `VITE_PAYSTACK_PUBLIC_KEY` (frontend, safe to be public)
+   - `PAYSTACK_SECRET_KEY` (server only)
+   - `TERMII_API_KEY` and `TERMII_SENDER_ID` (server only)
+   - `ANTHROPIC_API_KEY` (server only, for the AI Engine)
+6. Redeploy (Deployments tab, the three dots on the latest, Redeploy).
 
-## Stage 5 (Monitor) setup
-Stage 5 adds the six-category HEFAMAA checklist onto a visit, with red/amber/green scoring and evidence capture. In demo mode this saves in the browser. For real accounts, add three columns to the existing visits table (run once in the Supabase SQL Editor):
+Once the Supabase keys are present the app reads and writes the real database. Once the Paystack public key is present the real Paystack checkout opens and payments are verified server-side through `/api/paystack-verify`. Once the Termii key is present, `/api/notify` sends real SMS on payment and certificate events.
 
-```sql
-alter table visits add column if not exists monitoring jsonb;
-alter table visits add column if not exists score int;
-alter table visits add column if not exists overall_rating text;
-```
+Before real launch, tighten the row level security policies in `schema.sql` so each role and agency only sees its own rows, and move privileged writes (escrow release, audit log, certificate issuance) behind server-side Edge Functions using the service role key. Keep laboratory results encrypted at rest.
 
-### How it works
-Open Monitor, choose a checked-in visit, and rate each item Green, Amber or Red. The category and overall compliance scores update live. Per item you can add a photo, a document scan, or a voice note, and each piece of evidence is stamped with the time and, if allowed, the location. Photos and scans are shrunk in the browser before saving to keep them small. Your work autosaves to the device as you go, so a lost connection will not lose it: an Online or Offline badge shows the state, and if a save cannot reach Supabase it is kept locally and marked Pending sync, with a Sync now button to retry.
+## Languages
 
-Two notes. Camera, microphone and location need the site on https, which Vercel provides. Evidence is stored inline for now, which is fine for routine volumes; if you later capture a great deal of media per visit, moving evidence to Supabase Storage is the clean next step.
+The interface ships in English and Yoruba. Use the EN and YO toggle in the top banner to switch. The public entry pages and the food handler journey are translated; other portals fall back to English. To extend a translation, add the Yoruba string to the `STRINGS.yo` dictionary in `src/App.jsx` under the same key already used for English.
 
-## Stage 6 (Debrief) setup
-Stage 6 closes out a visit: strengths and gaps, corrective actions, a remediation timeline, the proprietor e-signature, and the monitoring report and corrective letter. In demo mode this saves in the browser. For real accounts, add one column to the visits table (run once in the Supabase SQL Editor):
+## Note on payments and notifications
 
-```sql
-alter table visits add column if not exists debrief jsonb;
-```
+- Payments use Paystack Inline. In preview a funded payment is simulated so the whole flow can be reviewed. With the public key set, the real card, transfer, USSD and mobile money popup opens.
+- Notifications are two layers: an in-app alerts bell for every role, and real SMS via Termii for the person directly affected (payment confirmed, certificate issued). SMS is sent only when the Termii key is configured, and fails silently in preview.
 
-### How it works
-Open Debrief and choose an assessed visit. The strengths (green items) and gaps (amber and red items) are pulled straight from the Monitor ratings. Enter a required action and timeline for each gap, set a remediation deadline and re-inspection window, and record the person in charge with their acknowledgement and signature, drawn on the device. Save debrief stores everything and moves the visit to debriefed, with the same offline and Sync now safety as Monitor. Monitoring report and Corrective letter open a formatted document in a new tab; use the browser's Print or Save as PDF. Signing and drawing need the site on https, which Vercel provides. Reports are drafts for human review before they are issued.
 
-## Stage 7 (Reports & notifications) and Stage 8 (Analytics)
-These two stages read the data already stored, so there are no new tables to create.
+## Interface and privacy (v1.2)
 
-### Reports (Stage 7)
-The Reports tab (RHSC HQ, Team Leader, HEFAMAA Reviewer) lists every visit with filters for area and status. For each visit you can open the Monitoring report or Corrective letter, or open Notify. A Re-inspections due panel lists debriefed visits by their remediation deadline, flagging overdue and near-due ones. Export CSV downloads the filtered list.
+- Refreshed, more dynamic UI: a decluttered top bar with the Lagos crest hard left, a compact action cluster (language, notifications, and an account menu), animated page transitions, count-up hero figures, and hover micro-interactions, kept restrained for an official platform.
+- Fees are no longer shown publicly. The fee and its waterfall appear only where a signed-in user is transacting or has oversight (the food handler payment step, the Sterling ledger, and regulator views). The public landing states only that the model is transparent and self-sustaining.
+- GDPR and NDPA 2023: a consent banner on first visit, a full privacy notice (controller, lawful basis including explicit consent for health data, retention, and data-subject rights) reachable from the footer and the account menu, and a self-service option to erase local data. Certification decisions remain subject to human review.
 
-Notifications work without a backend: Email report and HQ alert open your mail app with the summary prefilled, and SMS proprietor opens your phone's messaging app to the proprietor's number. To send SMS and email automatically instead, connect a provider (for example Termii or Africa's Talking for SMS, and a transactional email service) behind a small serverless function; the buttons can then post to it. That is an optional integration and needs provider keys.
 
-### Analytics (Stage 8)
-The Analytics tab (RHSC HQ, Team Leader, HEFAMAA Reviewer) shows headline figures (facilities, areas covered, visits, assessed, average score, green rate), a visits-by-area bar chart, a compliance-outcomes breakdown, and a geographic map where every facility is coloured by its most recent visit outcome, green, amber, red, or grey for not yet assessed. Everything is computed live from your facilities and visits.
+## Go-live diagnostics
 
-## Optional: automated notifications and evidence storage
-These are optional upgrades. The app runs fully without them; they improve real-account deployments.
+After you deploy, open https://your-app-url/#/status. It checks, live, that the Supabase keys are set and every table is reachable, whether the Paystack public key is present, and whether the three serverless functions are deployed. Each row shows OK or Check, and a Check row tells you exactly what to fix.
 
-### Automated SMS and email (serverless function)
-A function at `api/notify.js` sends SMS via Termii and email via Resend. Set these environment variables in Vercel (add only the ones you want; missing ones make the app fall back to opening your device's mail or SMS app):
-- SMS: `TERMII_API_KEY`, and optionally `TERMII_SENDER_ID` (defaults to RHSC).
-- Email: `RESEND_API_KEY`, and `NOTIFY_FROM` (a sender address verified with Resend).
 
-Redeploy after adding them. In Reports, open Notify on a visit: Send SMS uses the proprietor's phone; enter an address and Send email to email the summary. The open-app links remain as a manual fallback. You can swap Termii or Resend for another provider by editing the two fetch calls in `api/notify.js`.
+## Workspace switcher (LSMoH admin)
 
-### Evidence in Supabase Storage
-By default, photos, scans and voice notes are stored inline with the visit, which is fine for routine volumes. To store heavier media as files instead, create a Storage bucket named `evidence` in Supabase and make it public (Storage, New bucket, name it evidence, tick Public). The app then uploads each piece of evidence and stores its URL; if the bucket is missing or upload fails, it quietly falls back to inline storage, so nothing breaks. For tighter access you can keep the bucket private and switch the app to signed URLs later.
+LSMoH is the platform administrator. When you sign in as a Regulator with the LSMoH agency, a workspace switcher appears in the top bar. It lets you step into every portal (LASEPA, HEFAMAA, Approved Laboratory, Sterling Bank, Employer, Food Handler) and back to LSMoH without signing out. Your LSMoH identity is retained, each impersonated portal is labelled as an admin view, and any actions are still written to the audit trail under your name.
 
-## This build adds
-- Installable app (PWA): on a phone, open the site and choose "Add to Home Screen". It then launches full-screen and caches the shell for offline use.
-- Proprietor view: the Facility Proprietor role now has a "My Facility" tab with read-only outcomes, corrective actions and re-inspection timelines. (In production, scope this to the proprietor's own facility.)
-- WhatsApp notifications: add `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (e.g. `whatsapp:+14155238886`) in Vercel to enable automated WhatsApp from the Reports Notify panel. Without them, the "open WhatsApp" link still works.
-- Exports: Reports now export CSV, Excel and a PDF summary.
-- Google Sheet import: on Facilities, "Google Sheet" imports from a view-shared sheet link. "HEFAMAA sync" is ready to wire once you share the Agency's API endpoint.
-- Field evidence rules: photo required on red items, a voice note per rated category, and GPS mandatory at check-in.
+
+## Security hardening (v1.4) — no terminal needed
+
+Deploy the hardened backend entirely from the Supabase dashboard:
+
+1. SQL editor: run schema.sql, then run schema_hardened.sql. This applies deny-by-default RLS, locks sensitive tables to server-only writes, makes the audit log append-only, and creates the private results storage bucket.
+2. Make the encryption key: double-click keygen.html (in this folder), click Copy.
+3. Edge Functions > Deploy a new function > Via Editor. Name it exactly "safeplate", delete the template code, paste all of supabase/functions/safeplate/index.ts, click Deploy.
+4. Edge Functions > Secrets: add RESULT_ENC_KEY (the copied key), TERMII_API_KEY, and TERMII_SENDER_ID (SafePlate). SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
+5. Vercel env vars: add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (so /api/paystack-verify can record escrow), alongside the existing keys.
+6. Account metadata (Authentication > Users): privileged accounts (Ministry, Sterling) need a phone claim for 2FA SMS; laboratory accounts need a lab claim naming their laboratory.
+
+All privileged operations run through the single "safeplate" Edge Function, routed by action. The client automatically uses it once the backend is connected: encrypted results, real SMS OTP for Ministry and Sterling logins, and idle-timeout sessions. See SECURITY.md for the full design.
