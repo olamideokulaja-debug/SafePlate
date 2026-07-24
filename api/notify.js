@@ -1,55 +1,64 @@
-// /api/notify.js
-// Sends a real SMS via Termii (Nigerian-registered provider) when TERMII_API_KEY is set.
-// The app calls this fire-and-forget for lifecycle events (payment confirmed, certificate
-// issued, and so on). The API key is held only on the server and never reaches the browser.
+// Realms Field notification endpoint (Vercel serverless function).
+// SMS via Termii, email via Resend. Both are optional: if the relevant keys
+// are not set, the endpoint returns a clear "not configured" response and the
+// app falls back to opening the device mail or SMS app.
 //
-// Environment variables:
-//   TERMII_API_KEY    your Termii API key
-//   TERMII_SENDER_ID  an approved Termii sender ID (defaults to "SafePlate")
-//
-// SafePlate messages are transactional (payment confirmed, certificate issued), so
-// this uses Termii's DND route. The DND route delivers at any hour and reaches
-// numbers on Do-Not-Disturb, but it must be activated on your Termii account first
-// (contact Termii support). If you ever need the generic route, change channel to 'generic'.
-//
-// Email is not sent through Termii SMS. To enable email, wire an email provider
-// (for example Resend or SendGrid) in the email branch below.
+// Environment variables (set in Vercel, none required for the app to run):
+//   TERMII_API_KEY, TERMII_SENDER_ID   -> SMS
+//   RESEND_API_KEY, NOTIFY_FROM        -> email (NOTIFY_FROM must be a verified sender)
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-  const apiKey = process.env.TERMII_API_KEY
-  const sender = process.env.TERMII_SENDER_ID || 'SafePlate'
-  if (!apiKey) {
-    return res.status(501).json({ error: 'TERMII_API_KEY not configured' })
-  }
-  const { to, channel, message } = req.body || {}
-  if (!to || !message) {
-    return res.status(400).json({ error: 'Missing recipient or message' })
-  }
+  if (req.method !== 'POST') { res.status(405).json({ ok: false, reason: 'method_not_allowed' }); return }
+  const body = typeof req.body === 'string' ? safeParse(req.body) : (req.body || {})
+  const { channel, to, subject, message } = body
 
   try {
-    if (channel === 'email') {
-      // Not configured. Add your email provider here and send from the server.
-      return res.status(200).json({ ok: true, note: 'email channel not configured' })
+    if (channel === 'sms') {
+      const key = process.env.TERMII_API_KEY
+      const from = process.env.TERMII_SENDER_ID || 'RHSC'
+      if (!key) { res.status(200).json({ ok: false, reason: 'sms_not_configured' }); return }
+      if (!to) { res.status(200).json({ ok: false, reason: 'missing_recipient' }); return }
+      const r = await fetch('https://api.ng.termii.com/api/sms/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, from, sms: message, type: 'plain', channel: 'generic', api_key: key })
+      })
+      const detail = await r.json().catch(() => ({}))
+      res.status(200).json({ ok: r.ok, provider: 'termii', detail }); return
     }
 
-    const r = await fetch('https://api.ng.termii.com/api/sms/send', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        to,
-        from: sender,
-        sms: message,
-        type: 'plain',
-        channel: 'dnd',
-        api_key: apiKey
+    if (channel === 'email') {
+      const key = process.env.RESEND_API_KEY
+      const from = process.env.NOTIFY_FROM
+      if (!key || !from) { res.status(200).json({ ok: false, reason: 'email_not_configured' }); return }
+      if (!to) { res.status(200).json({ ok: false, reason: 'missing_recipient' }); return }
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({ from, to, subject: subject || 'RHSC notification', text: message })
       })
-    })
-    const data = await r.json()
-    return res.status(r.status).json(data)
+      const detail = await r.json().catch(() => ({}))
+      res.status(200).json({ ok: r.ok, provider: 'resend', detail }); return
+    }
+
+    if (channel === 'whatsapp') {
+      const sid = process.env.TWILIO_ACCOUNT_SID
+      const token = process.env.TWILIO_AUTH_TOKEN
+      const from = process.env.TWILIO_WHATSAPP_FROM // e.g. whatsapp:+14155238886
+      if (!sid || !token || !from) { res.status(200).json({ ok: false, reason: 'whatsapp_not_configured' }); return }
+      if (!to) { res.status(200).json({ ok: false, reason: 'missing_recipient' }); return }
+      const toWa = String(to).startsWith('whatsapp:') ? to : 'whatsapp:' + to
+      const body = new URLSearchParams({ From: from, To: toWa, Body: message || '' })
+      const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + sid + '/Messages.json', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + Buffer.from(sid + ':' + token).toString('base64') },
+        body: body.toString()
+      })
+      const detail = await r.json().catch(() => ({}))
+      res.status(200).json({ ok: r.ok, provider: 'twilio', detail }); return
+    }
+
+    res.status(400).json({ ok: false, reason: 'unknown_channel' })
   } catch (e) {
-    return res.status(500).json({ error: String(e) })
+    res.status(200).json({ ok: false, reason: 'error', detail: String((e && e.message) || e) })
   }
 }
+
+function safeParse(s) { try { return JSON.parse(s) } catch (e) { return {} } }
