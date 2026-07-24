@@ -62,6 +62,41 @@ async function tellHandler(db: any, safeplateId: string, message: string) {
 // Set this back to false to restore real 2FA once SMS works.
 const OTP_BYPASS = true
 
+// Approve a single submitted result: issues the certificate, instructs the
+// escrow release, notifies. Returns { status, certNo? }. Shared by the single
+// approve-result action and the bulk-approve action so the rules never drift.
+async function approveOneResult(db: any, actorEmail: string, order: any) {
+  let anyRefer = false
+  try { const r = JSON.parse(await decrypt(order.results_enc || '')); anyRefer = Object.values(r).some((v) => v === 'refer') } catch { /* ignore */ }
+  if (anyRefer) {
+    await db.from('test_orders').update({ status: 'Rejected' }).eq('id', order.id)
+    await db.from('audit_log').insert({ actor: actorEmail, role: 'LSMoH', action: 'Result rejected, referral pathway, escrow held', subject: order.safeplate_id })
+    await db.from('notifications').insert({ audience: 'all', title: 'Result referred', body: order.handler_name + ' must retest' })
+    await tellHandler(db, order.safeplate_id, 'your result has been referred by the Ministry and a retest is required. You may lodge an appeal in the app.')
+    return { status: 'Rejected' }
+  }
+  const { data: lsh } = await db.rpc('next_lsh')
+  const now = Date.now(), day = 86400000
+  const { data: fhRow } = await db.from('food_handlers').select('email, photo').eq('safeplate_id', order.safeplate_id).single()
+  await db.from('certificates').upsert({ safeplate_id: order.safeplate_id, name: order.handler_name, panel: (order.tests || []).join(', '), lab: order.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', cert_no: lsh, photo: fhRow?.photo || null }, { onConflict: 'safeplate_id' })
+  await db.from('escrow_releases').insert({ safeplate_id: order.safeplate_id, name: order.handler_name, lab: order.lab, amount: FEE, status: 'Instructed', approved_by: actorEmail, ts: new Date().toISOString() })
+  await db.from('test_orders').update({ status: 'Approved' }).eq('id', order.id)
+  await db.from('audit_log').insert({ actor: actorEmail, role: 'LSMoH', action: 'Approved, certificate ' + lsh + ' issued, escrow release instructed', subject: order.safeplate_id })
+  await db.from('notifications').insert([{ audience: 'sterling', title: 'Escrow release instructed', body: order.safeplate_id }, { audience: 'all', title: 'Certificate issued', body: order.handler_name + ' is now certified' }])
+  await tellHandler(db, order.safeplate_id, 'your Certificate of Fitness has been approved and is ready. Certificate number ' + lsh + '.')
+  try {
+    const resendKey = Deno.env.get('RESEND_API_KEY')
+    const appUrl = Deno.env.get('APP_URL') || ''
+    if (fhRow?.email && resendKey) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { authorization: 'Bearer ' + resendKey, 'content-type': 'application/json' },
+        body: JSON.stringify({ from: 'SafePlate <onboarding@resend.dev>', to: fhRow.email, subject: 'Your SafePlate Certificate of Fitness (' + lsh + ')', html: 'Your Certificate of Fitness is issued. View, download or verify it here: <a href="' + appUrl + '/#/verify/' + order.safeplate_id + '">' + appUrl + '/#/verify/' + order.safeplate_id + '</a>' })
+      })
+    }
+  } catch (_) { /* ignore email errors */ }
+  return { status: 'Approved', certNo: lsh }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -139,6 +174,34 @@ Deno.serve(async (req) => {
       return json({ ok: true, status: 'Submitted' })
     }
 
+    // ---- Laboratory submits many results at once (from a CSV upload) ----
+    if (action === 'bulk-submit-result') {
+      if (me.role !== 'laboratory') return json({ error: 'Forbidden' }, 403)
+      const rows = Array.isArray(body.rows) ? body.rows.slice(0, 500) : []
+      if (!rows.length) return json({ error: 'No result rows provided' }, 400)
+      let submitted = 0, quarantined = 0, notFound = 0, failed = 0
+      const problems: any[] = []
+      for (const row of rows) {
+        try {
+          const { data: order } = await db.from('test_orders').select('*').eq('safeplate_id', row.safeplateId).eq('status', 'Scheduled').order('created_at', { ascending: false }).limit(1).maybeSingle()
+          if (!order) { notFound++; problems.push({ safeplateId: row.safeplateId, reason: 'No sample awaiting results' }); continue }
+          if (me.lab && order.lab !== me.lab) { failed++; problems.push({ safeplateId: row.safeplateId, reason: 'Not your laboratory' }); continue }
+          const { data: labRow } = await db.from('laboratories').select('acc_no').eq('name', order.lab).single()
+          if (labRow && row.accreditationNumber !== labRow.acc_no) {
+            await db.from('test_orders').update({ status: 'Quarantined', note: 'Accreditation mismatch, referred to LSMoH.' }).eq('id', order.id)
+            await db.from('audit_log').insert({ actor: me.email, role: 'laboratory', action: 'Result quarantined, accreditation mismatch', subject: order.safeplate_id })
+            quarantined++; continue
+          }
+          const referred = Object.values(row.results || {}).some((v) => v === 'refer')
+          await db.from('test_orders').update({ status: 'Submitted', results_enc: await encrypt(JSON.stringify(row.results || {})), technician_id: row.technicianId, accreditation_number: row.accreditationNumber, reported_lsmoh: referred, biobank_confirm: referred, submitted_at: new Date().toISOString() }).eq('id', order.id)
+          await db.from('audit_log').insert({ actor: me.email, role: 'laboratory', action: 'Results submitted (encrypted, bulk)', subject: order.safeplate_id })
+          submitted++
+        } catch (e) { failed++; problems.push({ safeplateId: row.safeplateId, reason: String((e as Error).message || e) }) }
+      }
+      if (submitted > 0) await db.from('notifications').insert({ audience: 'LSMoH', title: 'Results submitted', body: submitted + ' results pending Ministry review' })
+      return json({ ok: true, submitted, quarantined, notFound, failed, total: rows.length, problems: problems.slice(0, 50) })
+    }
+
     // ---- LSMoH approves / flags / rejects ----
     if (action === 'approve-result') {
       if (me.role !== 'regulator' || me.agency !== 'LSMoH') return json({ error: 'Forbidden' }, 403)
@@ -149,36 +212,34 @@ Deno.serve(async (req) => {
         await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Flagged for review, escrow held', subject: order.safeplate_id })
         return json({ ok: true, status: 'Flagged' })
       }
-      let anyRefer = false
-      try { const r = JSON.parse(await decrypt(order.results_enc || '')); anyRefer = Object.values(r).some((v) => v === 'refer') } catch { /* ignore */ }
-      if (body.decision === 'reject' || anyRefer) {
+      if (body.decision === 'reject') {
         await db.from('test_orders').update({ status: 'Rejected' }).eq('id', body.orderId)
         await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Result rejected, referral pathway, escrow held', subject: order.safeplate_id })
         await db.from('notifications').insert({ audience: 'all', title: 'Result referred', body: order.handler_name + ' must retest' })
         await tellHandler(db, order.safeplate_id, 'your result has been referred by the Ministry and a retest is required. You may lodge an appeal in the app.')
         return json({ ok: true, status: 'Rejected' })
       }
-      const { data: lsh } = await db.rpc('next_lsh')
-      const now = Date.now(), day = 86400000
-      const { data: fhRow } = await db.from('food_handlers').select('email, photo').eq('safeplate_id', order.safeplate_id).single()
-      await db.from('certificates').upsert({ safeplate_id: order.safeplate_id, name: order.handler_name, panel: (order.tests || []).join(', '), lab: order.lab, issued: new Date(now).toISOString(), expiry: new Date(now + 182 * day).toISOString(), status: 'VALID', cert_no: lsh, photo: fhRow?.photo || null }, { onConflict: 'safeplate_id' })
-      await db.from('escrow_releases').insert({ safeplate_id: order.safeplate_id, name: order.handler_name, lab: order.lab, amount: FEE, status: 'Instructed', approved_by: me.email, ts: new Date().toISOString() })
-      await db.from('test_orders').update({ status: 'Approved' }).eq('id', body.orderId)
-      await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Approved, certificate ' + lsh + ' issued, escrow release instructed', subject: order.safeplate_id })
-      await db.from('notifications').insert([{ audience: 'sterling', title: 'Escrow release instructed', body: order.safeplate_id }, { audience: 'all', title: 'Certificate issued', body: order.handler_name + ' is now certified' }])
-      await tellHandler(db, order.safeplate_id, 'your Certificate of Fitness has been approved and is ready. Certificate number ' + lsh + '.')
-      // Email the certificate link to the handler (optional; needs RESEND_API_KEY).
-      try {
-        const resendKey = Deno.env.get('RESEND_API_KEY')
-        const appUrl = Deno.env.get('APP_URL') || ''
-        if (fhRow?.email && resendKey) {
-          await fetch('https://api.resend.com/emails', {
-            method: 'POST', headers: { authorization: 'Bearer ' + resendKey, 'content-type': 'application/json' },
-            body: JSON.stringify({ from: 'SafePlate <onboarding@resend.dev>', to: fhRow.email, subject: 'Your SafePlate Certificate of Fitness (' + lsh + ')', html: 'Your Certificate of Fitness is issued. View, download or verify it here: <a href="' + appUrl + '/#/verify/' + order.safeplate_id + '">' + appUrl + '/#/verify/' + order.safeplate_id + '</a>' })
-          })
-        }
-      } catch (_) { /* ignore email errors */ }
-      return json({ ok: true, status: 'Approved', cert_no: lsh })
+      const res = await approveOneResult(db, me.email, order)
+      return json({ ok: true, status: res.status, cert_no: res.certNo })
+    }
+
+    // ---- LSMoH bulk-approves many clean results in one call ----
+    if (action === 'bulk-approve') {
+      if (me.role !== 'regulator' || me.agency !== 'LSMoH') return json({ error: 'Forbidden' }, 403)
+      const ids = Array.isArray(body.orderIds) ? body.orderIds.slice(0, 500) : []
+      if (!ids.length) return json({ error: 'No orders selected' }, 400)
+      const { data: orders } = await db.from('test_orders').select('*').in('id', ids).eq('status', 'Submitted')
+      let approved = 0, referred = 0, failed = 0
+      const certs: string[] = []
+      for (const order of (orders || [])) {
+        try {
+          const res = await approveOneResult(db, me.email, order)
+          if (res.status === 'Approved') { approved++; if (res.certNo) certs.push(res.certNo) }
+          else referred++
+        } catch (e) { failed++ }
+      }
+      await db.from('audit_log').insert({ actor: me.email, role: 'LSMoH', action: 'Bulk approval: ' + approved + ' certified, ' + referred + ' referred, ' + failed + ' failed', subject: String(ids.length) + ' results' })
+      return json({ ok: true, approved, referred, failed, total: (orders || []).length, certs })
     }
 
     // ---- LASEPA approves / flags water ----

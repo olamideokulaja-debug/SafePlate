@@ -609,6 +609,12 @@ const store = {
     if (SUPABASE_READY) { const { data } = await supabase.from('lab_audits').select('*').eq('lab_id', labId).order('ts', { ascending: false }).limit(1); const a = data && data[0]; return a ? toCamel(a) : null }
     const db = DEMO.read(); return (db.labAudits || []).find(a => a.labId === labId) || null
   },
+  async bulkApproveResults(orderIds) {
+    return await store.fn('bulk-approve', { orderIds })
+  },
+  async bulkSubmitResults(rows) {
+    return await store.fn('bulk-submit-result', { rows })
+  },
   async listBeneficiaries() {
     if (SUPABASE_READY) { const { data } = await supabase.from('beneficiaries').select('*'); return camelList(data) }
     const db = DEMO.read(); return Object.values(db.beneficiaries || {})
@@ -2783,6 +2789,59 @@ function LabQueue({ session }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const lab = accreditedLabs.find(l => l.name === labName)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkTech, setBulkTech] = useState('')
+  const [bulkResult, setBulkResult] = useState(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  function downloadResultTemplate() {
+    const header = 'safeplate_id,hepatitis_a,hepatitis_e,stool_mc'
+    const example = 'SP-LG-202600001,pass,pass,pass'
+    const example2 = 'SP-LG-202600002,pass,pass,refer'
+    const blob = new Blob([[header, example, example2].join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob); const a = document.createElement('a')
+    a.href = url; a.download = 'safeplate-results-template.csv'; a.click(); URL.revokeObjectURL(url)
+  }
+  async function bulkUpload(file) {
+    setBulkResult(null)
+    if (!lab) { toast('Select your laboratory first.', 'err'); return }
+    if (!(lab.accNo || lab.acc_no)) { toast('Your laboratory has no accreditation number yet, so results cannot be submitted.', 'err'); return }
+    if (!bulkTech.trim()) { toast('Enter the technician ID that applies to this upload.', 'err'); return }
+    let text = ''
+    try { text = await file.text() } catch (e) { toast('Could not read that file.', 'err'); return }
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+    if (lines.length < 2) { toast('The file has no result rows.', 'err'); return }
+    const header = lines[0].toLowerCase().split(',').map(h => h.trim())
+    const idx = { id: header.indexOf('safeplate_id'), a: header.indexOf('hepatitis_a'), e: header.indexOf('hepatitis_e'), mc: header.indexOf('stool_mc') }
+    if (Object.values(idx).some(v => v < 0)) { toast('Columns must be: safeplate_id, hepatitis_a, hepatitis_e, stool_mc.', 'err'); return }
+    const norm = v => { const x = (v || '').trim().toLowerCase(); if (['pass', 'negative', 'normal', 'clear'].includes(x)) return 'pass'; if (['refer', 'positive', 'fail', 'abnormal'].includes(x)) return 'refer'; return x }
+    const rows = lines.slice(1).map(line => {
+      const c = line.split(','); const T = MANDATORY_TESTS
+      return { safeplateId: (c[idx.id] || '').trim().toUpperCase(), technicianId: bulkTech.trim(), accreditationNumber: (lab.accNo || lab.acc_no), results: { [T[0]]: norm(c[idx.a]), [T[1]]: norm(c[idx.e]), [T[2]]: norm(c[idx.mc]) } }
+    }).filter(r => r.safeplateId)
+    const bad = rows.filter(r => Object.values(r.results).some(v => !['pass', 'refer'].includes(v)))
+    if (bad.length) { toast(bad.length + ' row(s) have a result that is not pass or refer. Fix them and re-upload.', 'err'); return }
+    setBulkBusy(true)
+    try {
+      if (SUPABASE_READY) {
+        const r = await store.bulkSubmitResults(rows)
+        setBulkResult(r)
+        toast('Uploaded: ' + r.submitted + ' submitted' + (r.quarantined ? ', ' + r.quarantined + ' quarantined' : '') + (r.notFound ? ', ' + r.notFound + ' not matched' : '') + '.', (r.notFound || r.failed) ? 'warn' : undefined)
+      } else {
+        let ok = 0
+        for (const row of rows) {
+          const o = orders.find(x => x.safeplateId === row.safeplateId && x.status === 'Scheduled')
+          if (!o) continue
+          const anyRefer = Object.values(row.results).some(v => v === 'refer')
+          await store.updateOrder(o.id, { status: 'Submitted', results: row.results, technicianId: row.technicianId, submittedAt: new Date().toISOString(), reportedLsmoh: anyRefer })
+          ok++
+        }
+        setBulkResult({ submitted: ok, quarantined: 0, notFound: rows.length - ok, failed: 0, total: rows.length })
+        toast('Uploaded ' + ok + ' of ' + rows.length + ' results.')
+      }
+      refresh()
+    } catch (e) { toast('Bulk upload failed: ' + (e.message || 'the server refused this action.'), 'err') }
+    setBulkBusy(false)
+  }
   async function refresh() { setLoading(true); setOrders(await store.listOrders(labName)); setLoading(false) }
   useEffect(() => { refresh() /* eslint-disable-next-line */ }, [labName])
   async function advance(o, status) {
@@ -2804,6 +2863,39 @@ function LabQueue({ session }) {
           <select value={labName} onChange={e => setLabName(e.target.value)} style={{ padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 9, fontFamily: 'inherit', fontSize: 14 }}>{accreditedLabs.map(l => <option key={l.id}>{l.name}</option>)}</select>
           <span className="muted" style={{ fontSize: 12.5 }}>{lab && (lab.accNo || lab.acc_no) ? 'Accreditation ' + (lab.accNo || lab.acc_no) : 'Accreditation number pending'}</span>
         </span>
+      </div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h3 className="serif" style={{ fontSize: 16, margin: 0 }}>Upload results in bulk</h3>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Submit a whole batch from a spreadsheet instead of one at a time. Each row is matched to a waiting sample by SAFEPLATE ID.</div>
+          </div>
+          <button className="btn sm" onClick={() => setBulkOpen(v => !v)}>{bulkOpen ? 'Close' : 'Bulk upload'}</button>
+        </div>
+        {bulkOpen && (
+          <div style={{ marginTop: 14 }}>
+            <div className="field" style={{ maxWidth: 260 }}><label>Technician ID for this batch</label><input value={bulkTech} onChange={e => setBulkTech(e.target.value)} placeholder="e.g. MLS-2291" /></div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn ghost sm" onClick={downloadResultTemplate}>Download CSV template</button>
+              <label className="btn p sm" style={{ cursor: 'pointer', margin: 0 }}>
+                {bulkBusy ? 'Uploading...' : 'Choose results file'}
+                <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} disabled={bulkBusy} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) bulkUpload(f); e.target.value = '' }} />
+              </label>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Columns: safeplate_id, hepatitis_a, hepatitis_e, stool_mc. Each result must read pass or refer. A row whose accreditation number does not match is quarantined for the Ministry, exactly as with a single submission.</div>
+            {bulkResult && (
+              <div className="note" style={{ marginTop: 12, borderColor: (bulkResult.notFound || bulkResult.failed) ? 'var(--gold)' : '#bcdcbc', background: (bulkResult.notFound || bulkResult.failed) ? '#fdf8ee' : 'var(--green-pale)' }}>
+                <b>{bulkResult.submitted} submitted</b> for Ministry review out of {bulkResult.total}.
+                {bulkResult.quarantined ? ' ' + bulkResult.quarantined + ' quarantined (accreditation mismatch).' : ''}
+                {bulkResult.notFound ? ' ' + bulkResult.notFound + ' had no waiting sample and were skipped.' : ''}
+                {bulkResult.failed ? ' ' + bulkResult.failed + ' failed.' : ''}
+                {Array.isArray(bulkResult.problems) && bulkResult.problems.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12.5 }}>{bulkResult.problems.slice(0, 8).map((p, i) => <div key={i}>· <span className="mono">{p.safeplateId}</span>: {p.reason}</div>)}</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="note" style={{ marginBottom: 18 }}>You see only this laboratory's orders. Results are encrypted at rest (AES-256) in the connected build, and payment is released only after Ministry approval, not on upload.</div>
       <Insights session={session} />
@@ -3336,8 +3428,11 @@ function LSMoHReview({ session, guard, audit }) {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [selected, setSelected] = useState({})
+  function toggleSel(id) { setSelected(s => ({ ...s, [id]: !s[id] })) }
   async function refresh() {
     setLoading(true)
+    setSelected({})
     const all = await store.listAllOrders()
     let queue = all.filter(o => o.status === 'Submitted')
     // Live results are encrypted at rest, so fetch the decrypted panel for review.
@@ -3354,14 +3449,33 @@ function LSMoHReview({ session, guard, audit }) {
   async function approveAll() {
     const clean = orders.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer'))
     if (!clean.length) { toast('No clean, readable results are ready to approve.', 'warn'); return }
-    setBulkBusy(true)
-    let ok = 0; let lastErr = ''
-    for (const o of clean) { try { await approve(o); ok++ } catch (e) { lastErr = (e && e.message) || 'server refused' } }
-    setBulkBusy(false)
-    if (ok === 0) toast('No results could be approved: ' + (lastErr || 'the server refused this action.'), 'err')
-    else if (ok < clean.length) toast('Approved ' + ok + ' of ' + clean.length + '. The rest failed: ' + lastErr, 'warn')
-    else toast('Bulk approval complete: ' + ok + ' certificate' + (ok === 1 ? '' : 's') + ' issued.')
+    await runBulk(clean.map(o => o.id))
   }
+  async function approveSelected() {
+    const ids = orders.filter(o => selected[o.id]).map(o => o.id)
+    if (!ids.length) { toast('Tick the results you want to approve first.', 'warn'); return }
+    await runBulk(ids)
+  }
+  async function runBulk(ids) {
+    setBulkBusy(true)
+    try {
+      if (SUPABASE_READY) {
+        const r = await store.bulkApproveResults(ids)
+        const parts = []
+        if (r.approved) parts.push(r.approved + ' certified')
+        if (r.referred) parts.push(r.referred + ' referred')
+        if (r.failed) parts.push(r.failed + ' failed')
+        toast('Bulk approval complete: ' + (parts.join(', ') || 'nothing to do') + '.', r.failed ? 'warn' : undefined)
+      } else {
+        let ok = 0, lastErr = ''
+        for (const id of ids) { const o = orders.find(x => x.id === id); if (!o) continue; try { await approve(o); ok++ } catch (e) { lastErr = (e && e.message) || 'server refused' } }
+        toast(ok ? ('Approved ' + ok + ' result' + (ok === 1 ? '' : 's') + '.') : ('No results could be approved: ' + lastErr), ok ? undefined : 'err')
+      }
+      refresh()
+    } catch (e) { toast('Bulk approval failed: ' + (e.message || 'the server refused this action.'), 'err') }
+    setBulkBusy(false)
+  }
+
   async function approve(o) {
     if (SUPABASE_READY) { await store.fn('approve-result', { orderId: o.id, decision: 'approve' }); toast('Result approved, certificate issued.'); refresh(); return }
     const anyRefer = o.results && o.tests.some(t => o.results[t] === 'refer')
@@ -3396,9 +3510,24 @@ function LSMoHReview({ session, guard, audit }) {
       )}
       {loading && <p className="muted">Loading results awaiting review...</p>}
       {!loading && shown.length === 0 && <div className="placeholder">No results are awaiting Ministry review. Submitted laboratory results appear here.</div>}
+      {!loading && shown.length > 0 && (() => {
+        const selCount = shown.filter(o => selected[o.id]).length
+        const cleanShown = shown.filter(o => o.results && !(o.tests || []).some(t => o.results[t] === 'refer'))
+        return (
+          <div className="row-between" style={{ marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost sm" onClick={() => setSelected(Object.fromEntries(cleanShown.map(o => [o.id, true])))}>Select all clean</button>
+              {selCount > 0 && <button className="btn ghost sm" onClick={() => setSelected({})}>Clear ({selCount})</button>}
+            </div>
+            <button className="btn p sm" disabled={bulkBusy || selCount === 0} onClick={() => guard('Approve ' + selCount + ' selected result' + (selCount === 1 ? '' : 's'), approveSelected)}>{bulkBusy ? 'Approving...' : 'Approve selected' + (selCount ? ' (' + selCount + ')' : '')}</button>
+          </div>
+        )
+      })()}
       {!loading && shown.map(o => (
-        <div className="ord" key={o.id}>
-          <div className="top"><div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{o.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{o.safeplateId} · {o.lab}</div></div>
+        <div className="ord" key={o.id} style={selected[o.id] ? { borderColor: 'var(--green)', boxShadow: '0 0 0 1px var(--green)' } : undefined}>
+          <div className="top"><div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={!!selected[o.id]} onChange={() => toggleSel(o.id)} style={{ marginTop: 4, width: 17, height: 17 }} title="Select for bulk approval" />
+            <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{o.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{o.safeplateId} · {o.lab}</div></div></div>
             <span className={'status ' + (slaExceeded(o) ? 'Flag' : 'Submitted')}>{slaExceeded(o) ? 'SLA exceeded, escalated' : 'Within 48h SLA'}</span></div>
           {!o.results && <div className="err" style={{ marginTop: 10 }}>The laboratory result panel could not be read for this order. Do not approve it. Contact the laboratory and report this through Help and support.</div>}
           <table className="split-tbl" style={{ marginTop: 8 }}><tbody>{o.tests.map(t => (
