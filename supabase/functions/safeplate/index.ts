@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
   try {
     // ---- Laboratory submits encrypted results ----
     if (action === 'submit-result') {
-      if (me.role !== 'laboratory') return json({ error: 'Forbidden' }, 403)
+      if (me.role !== 'laboratory') return json({ error: 'This account is signed in as "' + (me.role || 'no role') + '", not as a laboratory. Sign out and sign in again choosing the Laboratory portal.', role: me.role || null }, 403)
       const { data: order } = await db.from('test_orders').select('*').eq('id', body.orderId).single()
       if (!order) return json({ error: 'Order not found' }, 404)
       if (me.lab && order.lab !== me.lab) return json({ error: 'Not your order' }, 403)
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
     // ---- Laboratory submits many results at once (from a CSV upload) ----
     if (action === 'bulk-submit-result') {
-      if (me.role !== 'laboratory') return json({ error: 'Forbidden' }, 403)
+      if (me.role !== 'laboratory') return json({ error: 'This account is signed in as "' + (me.role || 'no role') + '", not as a laboratory, so it cannot submit results. Sign out and sign in again choosing the Laboratory portal.', role: me.role || null }, 403)
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, 500) : []
       if (!rows.length) return json({ error: 'No result rows provided' }, 400)
       let submitted = 0, quarantined = 0, notFound = 0, failed = 0

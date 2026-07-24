@@ -622,6 +622,14 @@ const store = {
     const db = DEMO.read()
     return Object.values(db.orders || {}).filter(o => o.lab === labName && o.status === 'Scheduled')
   },
+  async currentTokenRole() {
+    if (!SUPABASE_READY) return 'laboratory'
+    try {
+      const { data } = await supabase.auth.getSession()
+      const u = data && data.session && data.session.user
+      return (u && u.user_metadata && u.user_metadata.role) || ''
+    } catch (e) { return '' }
+  },
   async bulkSubmitResults(rows) {
     return await store.fn('bulk-submit-result', { rows })
   },
@@ -849,9 +857,11 @@ const store = {
     const res = await fetch(SUPABASE_URL + '/functions/v1/safeplate', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, apikey: SUPABASE_ANON_KEY }, body: JSON.stringify({ action: name, ...(body || {}) }) })
     const out = await res.json().catch(() => ({}))
     if (!res.ok) {
+      // If the server sent a specific reason (e.g. which role it saw), show that.
+      if (out && out.error) throw new Error(out.error)
       if (res.status === 403) throw new Error('Your session was not recognised for this action. Sign out and sign in again with the correct role, and make sure the latest version is deployed.')
       if (res.status === 401) throw new Error('Your session has expired. Please sign in again.')
-      throw new Error(out.error || 'Action failed')
+      throw new Error('Action failed')
     }
     return out
   }
@@ -2787,12 +2797,12 @@ function LabAvailability({ session }) {
   )
 }
 
-function LaboratoryModule({ session, tab }) {
-  if (tab === 'availability') return <LabAvailability session={session} />
-  return <LabQueue session={session} />
+function LaboratoryModule({ session, tab, adminView }) {
+  if (tab === 'availability') return <LabAvailability session={session} adminView={adminView} />
+  return <LabQueue session={session} adminView={adminView} />
 }
 
-function LabQueue({ session }) {
+function LabQueue({ session, adminView }) {
   const [accreditedLabs, setAccreditedLabs] = useState(() => labsView().filter(l => l.accredited))
   useEffect(() => { store.accreditedLabList().then(list => { if (list && list.length) setAccreditedLabs(list) }).catch(() => {}) }, [])
   const [labName, setLabName] = useState(() => { const a = labsView().filter(l => l.accredited); return a[0] ? a[0].name : '' })
@@ -2895,6 +2905,15 @@ function LabQueue({ session }) {
     setBulkBusy(true)
     try {
       if (SUPABASE_READY) {
+        // Pre-flight: confirm this session's token actually carries the
+        // laboratory role, since that is the commonest cause of a rejected
+        // upload and the message is clearer before the round trip.
+        const tokenRole = await store.currentTokenRole()
+        if (tokenRole !== 'laboratory') {
+          setBulkBusy(false)
+          toast('This session is signed in as "' + (tokenRole || 'no role') + '", not as a laboratory, so results cannot be submitted. Sign out and sign in again through the Laboratory portal, then try once more.', 'err')
+          return
+        }
         const r = await store.bulkSubmitResults(rows)
         setBulkResult(r)
         toast('Uploaded: ' + r.submitted + ' submitted' + (r.quarantined ? ', ' + r.quarantined + ' quarantined' : '') + (r.notFound ? ', ' + r.notFound + ' not matched' : '') + '.', (r.notFound || r.failed) ? 'warn' : undefined)
@@ -2944,14 +2963,15 @@ function LabQueue({ session }) {
           </div>
           <button className="btn sm" onClick={() => setBulkOpen(v => !v)}>{bulkOpen ? 'Close' : 'Bulk upload'}</button>
         </div>
+        {adminView && <div className="note" style={{ marginTop: 12, borderColor: 'var(--gold)', background: '#fdf8ee', fontSize: 13 }}>You are viewing this laboratory workspace as an LSMoH administrator. This is a read-only oversight view, so results cannot be submitted from here. Only the laboratory's own account can submit results.</div>}
         {bulkOpen && (
           <div style={{ marginTop: 14 }}>
             <div className="field" style={{ maxWidth: 260 }}><label>Technician ID for this batch</label><input value={bulkTech} onChange={e => setBulkTech(e.target.value)} placeholder="e.g. MLS-2291" /></div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="btn ghost sm" onClick={downloadResultWorkbook}>Download results workbook</button>
-              <label className="btn p sm" style={{ cursor: 'pointer', margin: 0 }}>
+              <label className={'btn p sm' + (adminView ? ' disabled' : '')} style={{ cursor: adminView ? 'not-allowed' : 'pointer', margin: 0, opacity: adminView ? 0.55 : 1 }} title={adminView ? 'Read-only oversight view' : undefined}>
                 {bulkBusy ? 'Uploading...' : 'Upload completed workbook'}
-                <input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }} disabled={bulkBusy} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) bulkUpload(f); e.target.value = '' }} />
+                <input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }} disabled={bulkBusy || adminView} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) bulkUpload(f); e.target.value = '' }} />
               </label>
             </div>
             <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>The workbook lists each waiting client with their SAFEPLATE ID already filled in. For each of the three tests choose Pass or Fail from the dropdown. Leave a client's row blank to skip them this time. Your accreditation number is applied automatically on upload.</div>
@@ -5290,7 +5310,7 @@ export default function App() {
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (eff.role === 'food_handler') return <FoodHandlerModule session={eff} />
-    if (eff.role === 'laboratory') return <LaboratoryModule session={eff} tab={tab} />
+    if (eff.role === 'laboratory') return <LaboratoryModule session={eff} tab={tab} adminView={isAdmin && workspace !== 'lsmoh'} />
     if (eff.role === 'regulator') return <RegulatorModule session={eff} tab={tab} onTab={setTab} />
     if (eff.role === 'officer') return <OfficerModule session={eff} tab={tab} />
     if (eff.role === 'sterling') return <SterlingModule session={eff} tab={tab} onTab={setTab} />
