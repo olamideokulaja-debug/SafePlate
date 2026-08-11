@@ -580,3 +580,22 @@ alter table complaints add column if not exists photos jsonb;
 alter table laboratories add column if not exists availability jsonb;
 alter table test_orders add column if not exists appointment_date date;
 alter table test_orders add column if not exists appointment_slot text;
+
+-- NIN verification outcome recorded at registration.
+alter table food_handlers add column if not exists nin_verified boolean default false;
+alter table food_handlers add column if not exists nin_verified_at timestamptz;
+alter table food_handlers add column if not exists nin_verified_by text;
+
+-- Bank staff access management (Sterling admin).
+create table if not exists bank_staff (
+  id text primary key,
+  name text, email text unique, phone text,
+  access_level text default 'Viewer',
+  status text default 'Active',
+  added_by text, created_at timestamptz default now()
+);
+alter table bank_staff enable row level security;
+drop policy if exists bankstaff_read on bank_staff;
+drop policy if exists bankstaff_write on bank_staff;
+create policy bankstaff_read on bank_staff for select to authenticated using (auth_role() = 'sterling');
+create policy bankstaff_write on bank_staff for all to authenticated using (auth_role() = 'sterling') with check (auth_role() = 'sterling');

@@ -108,6 +108,47 @@ Deno.serve(async (req) => {
   // Deliberately limited: they never reveal test results or personal records
   // beyond what the requester already proves they know.
   try {
+    // Verify a NIN against NIMC via the Dojah aggregator. Returns the verified
+    // name so the app can confirm it matches what the applicant typed.
+    // Goes live the moment DOJAH_APP_ID and DOJAH_API_KEY are set in the Vault;
+    // until then it reports that verification is unavailable so registration is
+    // blocked, per policy, rather than waved through.
+    if (action === 'email-for-phone') {
+      const phone = String(body.phone || '').replace(/\s+/g, '')
+      if (!/^0\d{10}$/.test(phone)) return json({ ok: false, reason: 'Enter your 11-digit phone number.' }, 400)
+      const { data: fh } = await db.from('food_handlers').select('email').eq('phone', phone).not('email', 'is', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (!fh || !fh.email) return json({ ok: false, reason: 'No account with a sign-in email is registered to that phone number.' }, 404)
+      return json({ ok: true, email: fh.email })
+    }
+
+    if (action === 'verify-nin') {
+      const nin = String(body.nin || '').replace(/\s+/g, '')
+      if (!/^\d{11}$/.test(nin)) return json({ ok: false, reason: 'A NIN must be exactly 11 digits.' }, 400)
+      const appId = Deno.env.get('DOJAH_APP_ID')
+      const apiKey = Deno.env.get('DOJAH_API_KEY')
+      const base = Deno.env.get('DOJAH_BASE') || 'https://api.dojah.io'
+      if (!appId || !apiKey) {
+        return json({ ok: false, unavailable: true, reason: 'NIN verification is not yet connected. A supervisor must admit this applicant manually until NIMC verification is live.' }, 503)
+      }
+      try {
+        const resp = await fetch(base + '/api/v1/kyc/nin?nin=' + encodeURIComponent(nin), {
+          headers: { 'AppId': appId, 'Authorization': apiKey }
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          const msg = (data && (data.error || data.message)) || 'NIMC could not verify this NIN.'
+          return json({ ok: false, reason: String(msg) }, resp.status === 404 ? 404 : 502)
+        }
+        const e = (data && (data.entity || data.data || data)) || {}
+        const first = e.first_name || e.firstname || ''
+        const last = e.last_name || e.surname || e.lastname || ''
+        const fullName = [first, e.middle_name || e.middlename || '', last].filter(Boolean).join(' ').trim()
+        return json({ ok: true, nin, firstName: first, lastName: last, fullName, dob: e.date_of_birth || e.dob || null, photo: e.photo || e.image || null })
+      } catch (e) {
+        return json({ ok: false, unavailable: true, reason: 'NIMC verification service is unreachable. A supervisor must admit this applicant manually.' }, 502)
+      }
+    }
+
     // Recover a forgotten SAFEPLATE ID. Requires BOTH phone and NIN so that
     // knowing a phone number alone is not enough to identify someone.
     if (action === 'recover-id') {

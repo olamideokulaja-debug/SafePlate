@@ -532,6 +532,20 @@ const store = {
     if (SUPABASE_READY) { const { error } = await supabase.from('escrow_releases').insert(toSnake(rec)); if (error) throw new Error(error.message); return rec }
     const db = DEMO.read(); db.releases = db.releases || []; db.releases.unshift(rec); DEMO.write(db); return rec
   },
+  async emailForPhone(phone) {
+    if (SUPABASE_READY) { return await store.fn('email-for-phone', { phone }) }
+    const db = DEMO.read()
+    const hit = Object.values(db.handlers || {}).find(h => String(h.phone || '').replace(/\s+/g, '') === String(phone || '').replace(/\s+/g, '') && h.email)
+    return hit ? { ok: true, email: hit.email } : { ok: false, reason: 'No account with an email is registered to that phone number.' }
+  },
+  async verifyNin(nin) {
+    if (SUPABASE_READY) { return await store.fn('verify-nin', { nin }) }
+    // Demo mode: accept any 11-digit NIN and echo a placeholder name so the
+    // flow can be exercised without a live NIMC connection.
+    const clean = String(nin || '').replace(/\s+/g, '')
+    if (!/^\d{11}$/.test(clean)) return { ok: false, reason: 'A NIN must be exactly 11 digits.' }
+    return { ok: true, nin: clean, fullName: '', demo: true }
+  },
   async recoverId(phone, nin) {
     const ph = String(phone || '').replace(/\s+/g, ''), nn = String(nin || '').replace(/\s+/g, '')
     if (SUPABASE_READY) { const out = await store.fn('recover-id', { phone: ph, nin: nn }); return out }
@@ -632,6 +646,20 @@ const store = {
   },
   async bulkSubmitResults(rows) {
     return await store.fn('bulk-submit-result', { rows })
+  },
+  async listBankStaff() {
+    if (SUPABASE_READY) { const { data } = await supabase.from('bank_staff').select('*').order('created_at', { ascending: false }); return camelList(data) }
+    const db = DEMO.read(); return Object.values(db.bankStaff || {})
+  },
+  async saveBankStaff(rec) {
+    const id = rec.id || ('BNK-' + Date.now())
+    const full = { id, name: rec.name, email: (rec.email || '').toLowerCase(), phone: rec.phone || '', accessLevel: rec.accessLevel || 'Viewer', status: rec.status || 'Active', addedBy: rec.addedBy || '' }
+    if (SUPABASE_READY) { const { error } = await supabase.from('bank_staff').upsert(toSnake(full), { onConflict: 'id' }); if (error) throw new Error(error.message); return full }
+    const db = DEMO.read(); db.bankStaff = db.bankStaff || {}; db.bankStaff[id] = { ...(db.bankStaff[id] || {}), ...full }; DEMO.write(db); return full
+  },
+  async setBankStaffStatus(id, status) {
+    if (SUPABASE_READY) { const { error } = await supabase.from('bank_staff').update({ status }).eq('id', id); if (error) throw new Error(error.message); return }
+    const db = DEMO.read(); if (db.bankStaff && db.bankStaff[id]) { db.bankStaff[id].status = status; DEMO.write(db) }
   },
   async listBeneficiaries() {
     if (SUPABASE_READY) { const { data } = await supabase.from('beneficiaries').select('*'); return camelList(data) }
@@ -901,6 +929,8 @@ const BURDEN = [
 ]
 
 const NDPA_CONSENT_VERSION = 'NDPA-2026-v1'
+const isValidEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || '').trim())
+const isValidPhone = v => /^0\d{10}$/.test(String(v || '').replace(/\s+/g, ''))
 const MANDATORY_TESTS = ['Hepatitis A', 'Hepatitis E', 'Stool Microscopy & Culture (MC)']
 
 const LAGOS_LGAS = ['Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere']
@@ -1183,7 +1213,7 @@ function tabsForSession(session) {
     case 'employer': return [{ id: 'team', label: t('nav_team') }, { id: 'premises', label: 'Premises' }, { id: 'water', label: t('nav_water') }, { id: 'verify', label: t('nav_verify') }]
     case 'sterling': return [
       { id: 'home', label: t('nav_home') }, { id: 'ledger', label: t('nav_ledger') }, { id: 'releases', label: t('nav_releases') },
-      { id: 'batch', label: t('nav_batch') }, { id: 'beneficiaries', label: t('nav_beneficiaries') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'verify', label: t('nav_verify') }
+      { id: 'batch', label: t('nav_batch') }, { id: 'beneficiaries', label: t('nav_beneficiaries') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'reports', label: 'Reports' }, { id: 'admin', label: 'Admin' }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
       if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'complaints', label: 'Complaints' }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
@@ -2242,9 +2272,19 @@ function AuthFlow({ onDone, onBack }) {
     try {
       if (mode === 'signup' && role.id === 'laboratory' && !labForm.labName.trim()) { setErr('Please enter your laboratory name.'); setBusy(false); return }
       if (mode === 'signup' && role.id === 'laboratory' && labForm.accountNumber && !/^\d{10}$/.test(labForm.accountNumber.replace(/\s+/g, ''))) { setErr('Bank account number must be exactly 10 digits.'); setBusy(false); return }
-      const meta = { role: role.id, agency: ['regulator', 'officer'].includes(role.id) ? agency : null, name: name || email.split('@')[0], title: roleTitle(role.id, agency) }
-      const user = mode === 'signup' ? await store.signUp(email, password, meta) : await store.signIn(email, password, role.id, meta.agency, meta.name)
-      let finalUser = { ...user, email: user.email || email, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
+      // Food handlers may sign in with either their email or their phone number.
+      // Supabase auth is email-keyed, so a phone is resolved to the account email.
+      let loginEmail = email.trim()
+      if (mode === 'signin' && role.id === 'food_handler' && isValidPhone(loginEmail)) {
+        const r = await store.emailForPhone(loginEmail)
+        if (!r.ok) { setErr(r.reason || 'That phone number is not registered. Try your email instead.'); setBusy(false); return }
+        loginEmail = r.email
+      }
+      if (mode === 'signup' && !isValidEmail(loginEmail)) { setErr('Enter a valid email address to create your account.'); setBusy(false); return }
+      if (mode === 'signin' && !isValidEmail(loginEmail) && !isValidPhone(email)) { setErr('Enter the email or phone number registered to your account.'); setBusy(false); return }
+      const meta = { role: role.id, agency: ['regulator', 'officer'].includes(role.id) ? agency : null, name: name || loginEmail.split('@')[0], title: roleTitle(role.id, agency) }
+      const user = mode === 'signup' ? await store.signUp(loginEmail, password, meta) : await store.signIn(loginEmail, password, role.id, meta.agency, meta.name)
+      let finalUser = { ...user, email: user.email || loginEmail, role: user.role || role.id, agency: user.agency || meta.agency, title: user.title || meta.title, name: user.name || meta.name }
       if (finalUser.role === 'officer') {
         let off = await store.getOfficerByEmail(finalUser.email)
         if (!off) { off = await store.addOfficer({ name: finalUser.name, email: finalUser.email, agency: finalUser.agency, status: 'Pending' }) }
@@ -2319,7 +2359,7 @@ function AuthFlow({ onDone, onBack }) {
           </div>
         )}
         {mode === 'signup' && <div className="field"><label>{role.id === 'laboratory' ? 'Your full name' : 'Full name'}</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></div>}
-        <div className="field"><label>Email or phone</label><input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></div>
+        <div className="field"><label>{role.id === 'food_handler' ? 'Email or phone number' : 'Email'}</label><input value={email} onChange={e => setEmail(e.target.value)} placeholder={role.id === 'food_handler' ? 'you@example.com or 08031234567' : 'you@example.com'} /></div>
         <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" /></div>
         {needs2fa && <div className="note" style={{ marginBottom: 14 }}>This portal requires 2FA. In the connected build an OTP is sent to your registered phone on every sign-in and approval.</div>}
         <button className="btn p block" onClick={submit} disabled={busy || !email || !password}>{busy ? 'Please wait...' : mode === 'signup' ? 'Create account' : 'Continue to portal'}</button>
@@ -2487,6 +2527,23 @@ function FoodHandlerModule({ session }) {
   const [mine, setMine] = useState(null)
   const [showWizard, setShowWizard] = useState(false)
   const [renewing, setRenewing] = useState(false)
+  const [ninState, setNinState] = useState({ status: 'idle', name: '', reason: '' })
+  const [ninOverride, setNinOverride] = useState(false)
+  async function verifyNin() {
+    const nin = (form.nin || '').replace(/\s+/g, '')
+    if (!/^\d{11}$/.test(nin)) { setNinState({ status: 'error', reason: 'Enter your 11-digit NIN first.' }); return }
+    setNinState({ status: 'checking', name: '', reason: '' })
+    try {
+      const r = await store.verifyNin(nin)
+      if (r.ok) {
+        // In demo mode there is no real name to compare; just mark verified.
+        setNinState({ status: 'verified', name: r.fullName || '', reason: '' })
+        if (r.fullName && !form.name) setF('name', r.fullName)
+      } else {
+        setNinState({ status: r.unavailable ? 'unavailable' : 'error', name: '', reason: r.reason || 'This NIN could not be verified.' })
+      }
+    } catch (e) { setNinState({ status: 'unavailable', name: '', reason: (e.message || 'Verification service is unreachable.') }) }
+  }
   const draftKey = 'sp_draft_' + (session.email || 'anon')
   const [draft, setDraft] = useState(null)
   const [avail, setAvail] = useState(null)
@@ -2530,7 +2587,9 @@ function FoodHandlerModule({ session }) {
     if (!form.name.trim() || !form.phone.trim()) { setErr('Name and phone number are required to register.'); return }
     if (!form.dob || !form.gender || !form.lga) { setErr('Date of birth, gender and LGA are required.'); return }
     if (!/^0\d{10}$/.test((form.phone || '').replace(/\s+/g, ''))) { setErr('Enter a valid 11-digit phone number, e.g. 08031234567.'); return }
-    if (form.nin && !/^\d{11}$/.test((form.nin || '').replace(/\s+/g, ''))) { setErr('NIN must be exactly 11 digits.'); return }
+    if (form.email && !isValidEmail(form.email)) { setErr('That email address does not look valid. Check it, or leave it blank.'); return }
+    if (!/^\d{11}$/.test((form.nin || '').replace(/\s+/g, ''))) { setErr('A valid 11-digit NIN is required.'); return }
+    if (ninState.status !== 'verified' && !ninOverride) { setErr('Please verify your NIN with NIMC before continuing. Use the Verify button next to the NIN field.'); return }
     if (!form.photo) { setErr('A passport photo is required. It is printed on your certificate to prevent anyone else using it.'); return }
     if (!form.consent) { setErr('You must agree to the processing of your personal data before you can register. This is required by the Nigeria Data Protection Act.'); return }
     if (!/^0?\d{10,11}$/.test(form.phone.replace(/\s+/g, ''))) { setErr('Enter a valid Nigerian phone number.'); return }
@@ -2567,7 +2626,7 @@ function FoodHandlerModule({ session }) {
       if (PAYSTACK_READY) { const v = await fetch('/api/paystack-verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reference, safeplateId: form.safeplateId, escrow: escrowPayload }) }); if (!v.ok) throw new Error('Payment verification failed') }
       const now = Date.now(), day = 86400000
       const certificate = { safeplateId: form.safeplateId, name: form.name, panel: MANDATORY_TESTS.join(', '), lab: form.lab.name, issued: null, expiry: new Date(now + 182 * day).toISOString(), status: 'PENDING_RESULTS' }
-      await store.saveHandler({ consentGiven: true, consentAt: new Date().toISOString(), consentVersion: NDPA_CONSENT_VERSION, safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, paymentRef: reference, paidAt, paidAmount: FEE, createdAt: new Date().toISOString() })
+      await store.saveHandler({ ninVerified: ninState.status === 'verified', ninVerifiedAt: new Date().toISOString(), ninVerifiedBy: ninState.status === 'verified' ? 'NIMC' : (ninOverride ? 'Supervisor override' : null), consentGiven: true, consentAt: new Date().toISOString(), consentVersion: NDPA_CONSENT_VERSION, safeplateId: form.safeplateId, name: form.name, phone: form.phone, dob: form.dob, gender: form.gender, address: form.address, lga: form.lga, nin: form.nin, email: form.email, employer: form.employer, employerAddress: form.employerAddress, photo: form.photo, lab: form.lab.name, tests: MANDATORY_TESTS, fee: FEE, waterfall: WATERFALL, paid: true, certificate, paymentRef: reference, paidAt, paidAmount: FEE, createdAt: new Date().toISOString() })
       await store.createOrder({ appointmentDate: form.apptDate || null, appointmentSlot: form.apptSlot || null, id: 'ORD-' + form.safeplateId.replace('SP-LG-', '') + (renewing ? '-R' + Date.now().toString().slice(-5) : ''), safeplateId: form.safeplateId, handlerName: form.name, phone: form.phone, lab: form.lab.name, tests: MANDATORY_TESTS, status: 'Scheduled', createdAt: new Date().toISOString() })
       if (!SUPABASE_READY) await store.createEscrow(escrowPayload)
       await store.notify('laboratory', 'New test order', form.name + ' booked ' + form.lab.name)
@@ -2622,7 +2681,20 @@ function FoodHandlerModule({ session }) {
           </div>
           <div className="field"><label>Home address</label><input value={form.address} onChange={e => setF('address', e.target.value)} placeholder="Street and area" /></div>
           <div className="field"><label>LGA</label><select value={form.lga} onChange={e => setF('lga', e.target.value)}><option value="">Select your LGA...</option>{LAGOS_LGAS.map(l => <option key={l}>{l}</option>)}</select></div>
-          <div className="field"><label>{t('lbl_nin')}</label><input value={form.nin} onChange={e => setF('nin', e.target.value)} placeholder="11-digit NIN" /></div>
+          <div className="field"><label>{t('lbl_nin')} <span style={{ color: 'var(--green)' }}>(required, verified with NIMC)</span></label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={form.nin} onChange={e => { setF('nin', e.target.value); setNinState({ status: 'idle', name: '', reason: '' }) }} placeholder="11-digit NIN" inputMode="numeric" style={{ flex: 1 }} />
+              <button className="btn sm" onClick={verifyNin} disabled={ninState.status === 'checking'}>{ninState.status === 'checking' ? 'Checking...' : ninState.status === 'verified' ? 'Verified' : 'Verify'}</button>
+            </div>
+            {ninState.status === 'verified' && <div style={{ fontSize: 12.5, color: 'var(--green)', fontWeight: 600, marginTop: 6 }}>NIN verified with NIMC{ninState.name ? ': ' + ninState.name : ''}.</div>}
+            {ninState.status === 'error' && <div className="err" style={{ marginTop: 8 }}>{ninState.reason}</div>}
+            {ninState.status === 'unavailable' && (
+              <div className="note" style={{ marginTop: 8, borderColor: 'var(--gold)', background: '#fdf8ee', fontSize: 12.5 }}>
+                {ninState.reason} If you are a SafePlate supervisor and NIMC is genuinely down, you may admit this applicant manually.
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, cursor: 'pointer' }}><input type="checkbox" checked={ninOverride} onChange={e => setNinOverride(e.target.checked)} /> Admit without NIMC verification (recorded in the audit trail)</label>
+              </div>
+            )}
+          </div>
           <div className="field"><label>{t('lbl_email')}</label><input value={form.email} onChange={e => setF('email', e.target.value)} placeholder="you@example.com" /></div>
           <div className="field"><label>{t('lbl_employer')}</label><input value={form.employer} onChange={e => setF('employer', e.target.value)} placeholder="Restaurant, hotel or company" /></div>
           <div className="field"><label>Employer address (optional)</label><input value={form.employerAddress} onChange={e => setF('employerAddress', e.target.value)} placeholder="Where you work" /></div>
@@ -4457,8 +4529,188 @@ function SterlingModule({ session, tab, onTab }) {
         <div className="note" style={{ marginBottom: 16 }}>End-of-day totals reconciling held, released and remitted balances.</div>
         <Reconcile escrow={escrow} />
       </>)}
+      {tab === 'reports' && <ReportingModule session={session} scope="sterling" />}
+      {tab === 'admin' && <SterlingAdmin session={session} />}
       {modal}
     </div></div>
+  )
+}
+
+function ReportingModule({ session, scope }) {
+  const [range, setRange] = useState('30')
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [range])
+  async function load() {
+    setLoading(true)
+    try {
+      const [certs, orders, escrow, releases, water] = await Promise.all([
+        store.listAllCertificates().catch(() => []),
+        store.listAllOrders().catch(() => []),
+        store.listEscrow().catch(() => []),
+        store.listReleases().catch(() => []),
+        store.listAllWaterTests().catch(() => [])
+      ])
+      const days = Number(range)
+      const since = days ? Date.now() - days * 86400000 : 0
+      const inRange = ts => !since || (ts && new Date(ts).getTime() >= since)
+      const certsR = certs.filter(c => inRange(c.issued))
+      const ordersR = orders.filter(o => inRange(o.createdAt || o.created_at))
+      const relR = releases.filter(r => inRange(r.ts))
+      const foodRevenue = ordersR.length * FEE
+      const disbursed = escrow.filter(e => e.status === 'RELEASED' && inRange(e.releasedTs || e.released_ts)).reduce((a, e) => a + (e.amount || 0), 0)
+      setData({
+        certsIssued: certsR.length,
+        certsValid: certs.filter(c => c.status === 'VALID').length,
+        ordersCreated: ordersR.length,
+        awaitingReview: orders.filter(o => o.status === 'Submitted').length,
+        waterTests: water.filter(w => inRange(w.createdAt || w.created_at)).length,
+        revenue: foodRevenue,
+        disbursed,
+        releases: relR.length,
+        byStatus: ['Scheduled', 'Submitted', 'Approved', 'Rejected', 'Flagged'].map(st => ({ status: st, n: orders.filter(o => o.status === st).length })),
+        certsList: certsR
+      })
+    } catch (e) { setData(null) }
+    setLoading(false)
+  }
+  function exportSummary() {
+    if (!data) return
+    const rows = [
+      { metric: 'Certificates issued (period)', value: data.certsIssued },
+      { metric: 'Certificates currently valid', value: data.certsValid },
+      { metric: 'Test orders created (period)', value: data.ordersCreated },
+      { metric: 'Awaiting Ministry review', value: data.awaitingReview },
+      { metric: 'Water tests (period)', value: data.waterTests },
+      { metric: 'Food testing revenue (period)', value: data.revenue },
+      { metric: 'Escrow disbursed (period)', value: data.disbursed },
+      { metric: 'Releases (period)', value: data.releases }
+    ]
+    exportCsv(rows, [{ label: 'Metric', key: 'metric' }, { label: 'Value', key: 'value' }], 'safeplate-report-' + range + 'd.csv')
+  }
+  function exportPdf() {
+    if (!data) return
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+    const W = doc.internal.pageSize.getWidth(), M = 54; let y = 58
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0, 102, 0)
+    doc.text('SAFEPLATE ' + (scope === 'sterling' ? 'FINANCIAL' : 'ACTIVITY') + ' REPORT', M, y); y += 18
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90, 90, 90)
+    doc.text('Period: last ' + range + ' days  ·  Generated ' + new Date().toLocaleString('en-GB'), M, y); y += 22
+    doc.setDrawColor(0, 102, 0); doc.setLineWidth(1.2); doc.line(M, y, W - M, y); y += 24
+    const line = (k, v) => { doc.setTextColor(110, 110, 110); doc.setFontSize(11); doc.text(k, M, y); doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.text(String(v), W - M, y, { align: 'right' }); doc.setFont('helvetica', 'normal'); y += 20 }
+    line('Certificates issued', data.certsIssued)
+    line('Certificates currently valid', data.certsValid)
+    line('Test orders created', data.ordersCreated)
+    line('Awaiting Ministry review', data.awaitingReview)
+    line('Water tests', data.waterTests)
+    if (scope === 'sterling') { line('Food testing revenue', naira(data.revenue)); line('Escrow disbursed', naira(data.disbursed)); line('Releases processed', data.releases) }
+    doc.save('SafePlate-Report-' + range + 'd.pdf')
+  }
+  return (
+    <div>
+      <div className="row-between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['0', 'All time']].map(([v, l]) => (
+            <button key={v} className={'btn sm' + (range === v ? ' p' : '')} onClick={() => setRange(v)}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn sm" onClick={exportSummary} disabled={!data}>Export CSV</button>
+          <button className="btn sm" onClick={exportPdf} disabled={!data}>Export PDF</button>
+        </div>
+      </div>
+      {loading && <p className="muted">Compiling report...</p>}
+      {data && (<>
+        <div className="tiles">
+          <div className="tile"><div className="v">{data.certsIssued}</div><div className="k">Certificates issued</div></div>
+          <div className="tile"><div className="v">{data.ordersCreated}</div><div className="k">Test orders</div></div>
+          <div className="tile"><div className="v">{data.waterTests}</div><div className="k">Water tests</div></div>
+          <div className="tile"><div className="v">{data.awaitingReview}</div><div className="k">Awaiting review</div></div>
+        </div>
+        {scope === 'sterling' && (
+          <div className="tiles">
+            <div className="tile"><div className="v">{naira(data.revenue)}</div><div className="k">Food testing revenue</div></div>
+            <div className="tile"><div className="v">{naira(data.disbursed)}</div><div className="k">Escrow disbursed</div></div>
+            <div className="tile"><div className="v">{data.releases}</div><div className="k">Releases</div></div>
+            <div className="tile"><div className="v">{data.certsValid}</div><div className="k">Valid certificates</div></div>
+          </div>
+        )}
+        <div className="card">
+          <h3 className="serif" style={{ fontSize: 16, marginTop: 0 }}>Test orders by stage</h3>
+          {data.byStatus.map(r => {
+            const max = Math.max(1, ...data.byStatus.map(x => x.n))
+            return (
+              <div key={r.status} style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0' }}>
+                <span style={{ width: 90, fontSize: 13 }}>{r.status}</span>
+                <div style={{ flex: 1, background: 'var(--line)', borderRadius: 6, height: 18, overflow: 'hidden' }}><div style={{ width: (r.n / max * 100) + '%', background: 'var(--green)', height: '100%' }} /></div>
+                <span style={{ width: 34, textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{r.n}</span>
+              </div>
+            )
+          })}
+        </div>
+      </>)}
+    </div>
+  )
+}
+
+function SterlingAdmin({ session }) {
+  const [rows, setRows] = useState([])
+  const [nf, setNf] = useState({ name: '', email: '', phone: '', accessLevel: 'Viewer' })
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function load() { try { setRows(await store.listBankStaff()) } catch (e) { setRows([]) } }
+  const LEVELS = ['Viewer', 'Officer', 'Administrator']
+  async function add() {
+    if (!nf.name.trim() || !isValidEmail(nf.email)) { toast('Enter a name and a valid email.', 'err'); return }
+    if (nf.phone && !isValidPhone(nf.phone)) { toast('Enter a valid 11-digit phone number, or leave it blank.', 'err'); return }
+    setBusy(true)
+    try { await store.saveBankStaff({ ...nf, addedBy: session.email }); toast(nf.name + ' added.'); setNf({ name: '', email: '', phone: '', accessLevel: 'Viewer' }); load() }
+    catch (e) { toast('Could not add staff: ' + (e.message || 'try again'), 'err') }
+    setBusy(false)
+  }
+  async function setStatus(r, status) {
+    try { await store.setBankStaffStatus(r.id, status); toast(r.name + ' ' + status.toLowerCase() + '.'); load() }
+    catch (e) { toast('Could not update: ' + (e.message || 'try again'), 'err') }
+  }
+  async function setLevel(r, accessLevel) {
+    try { await store.saveBankStaff({ ...r, accessLevel }); toast(r.name + ' set to ' + accessLevel + '.'); load() }
+    catch (e) { toast('Could not update: ' + (e.message || 'try again'), 'err') }
+  }
+  return (
+    <div>
+      <div className="tiles">
+        <div className="tile"><div className="v">{rows.length}</div><div className="k">Bank users</div></div>
+        <div className="tile"><div className="v">{rows.filter(r => r.status === 'Active').length}</div><div className="k">Active</div></div>
+        <div className="tile"><div className="v">{rows.filter(r => r.accessLevel === 'Administrator').length}</div><div className="k">Administrators</div></div>
+      </div>
+      <div className="note" style={{ marginBottom: 16 }}>Manage who at Sterling Bank can access this portal and what they may do. Viewers see the ledger and reports. Officers may instruct releases. Administrators may also manage users. Access levels are recorded, and every change is written to the audit trail.</div>
+      <div className="card" style={{ marginBottom: 18 }}>
+        <h3 className="serif" style={{ fontSize: 17, marginTop: 0 }}>Add a bank user</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field"><label>Full name</label><input value={nf.name} onChange={e => setNf({ ...nf, name: e.target.value })} placeholder="Name" /></div>
+          <div className="field"><label>Email</label><input value={nf.email} onChange={e => setNf({ ...nf, email: e.target.value })} placeholder="name@sterling.ng" /></div>
+          <div className="field"><label>Phone (optional)</label><input value={nf.phone} onChange={e => setNf({ ...nf, phone: e.target.value })} placeholder="08031234567" inputMode="numeric" /></div>
+          <div className="field"><label>Access level</label><select value={nf.accessLevel} onChange={e => setNf({ ...nf, accessLevel: e.target.value })}>{LEVELS.map(l => <option key={l}>{l}</option>)}</select></div>
+        </div>
+        <button className="btn p" onClick={add} disabled={busy}>{busy ? 'Adding...' : 'Add user'}</button>
+      </div>
+      <h3 className="serif" style={{ fontSize: 17 }}>Bank users</h3>
+      {rows.length === 0 && <div className="placeholder">No bank users added yet.</div>}
+      {rows.map(r => (
+        <div className="ord" key={r.id}>
+          <div className="top">
+            <div><b style={{ fontFamily: 'Lora,serif', fontSize: 15 }}>{r.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{r.email}{r.phone ? ' · ' + r.phone : ''}</div></div>
+            <span className="badge" style={{ background: r.status === 'Active' ? '#e7f4ec' : '#fdeeee', color: r.status === 'Active' ? '#0a6b39' : '#b3261e' }}>{r.status}</span>
+          </div>
+          <div className="row-between" style={{ flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <select value={r.accessLevel} onChange={e => setLevel(r, e.target.value)} style={{ padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 8, fontFamily: 'inherit', fontSize: 13 }}>{LEVELS.map(l => <option key={l}>{l}</option>)}</select>
+            {r.status === 'Active'
+              ? <button className="btn sm danger" onClick={() => setStatus(r, 'Suspended')}>Suspend</button>
+              : <button className="btn sm" onClick={() => setStatus(r, 'Active')}>Reactivate</button>}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
