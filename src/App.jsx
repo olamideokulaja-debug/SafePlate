@@ -926,6 +926,68 @@ function Styles() {
         .trust-band-art{display:none}
       }
       @media(prefers-reduced-motion:reduce){.hero-badge:before{animation:none}}
+
+      /* ---- Centered top navigation ---- */
+      .hdr .bar:not(.app){display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px}
+      .hdr .bar:not(.app) .navtabs{flex:initial;justify-content:center;gap:4px}
+      .hdr .bar:not(.app) .actions{margin-left:0}
+      .navtab{padding:10px 15px}
+      @media(max-width:1040px){
+        .hdr .bar:not(.app){grid-template-columns:auto auto;grid-template-areas:'brand actions' 'nav nav';row-gap:6px}
+        .hdr .bar:not(.app) .brand{grid-area:brand}
+        .hdr .bar:not(.app) .actions{grid-area:actions;margin-left:auto}
+        .hdr .bar:not(.app) .navtabs{grid-area:nav;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+      }
+
+      /* ============================================================
+         HERO BANNER + 3D scene
+         ============================================================ */
+      .hero-banner{position:relative;margin-bottom:8px;overflow:hidden;
+        background:
+          radial-gradient(900px 460px at 12% 8%, rgba(16,160,76,.16), transparent 58%),
+          radial-gradient(760px 420px at 92% 4%, rgba(251,174,64,.14), transparent 55%),
+          linear-gradient(168deg,#ffffff 0%, #f2f9f4 52%, #eaf4ee 100%);
+        border-bottom:1px solid var(--line)}
+      .hero-banner:before{content:'';position:absolute;inset:0;pointer-events:none;
+        background-image:linear-gradient(rgba(6,102,52,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(6,102,52,.05) 1px,transparent 1px);
+        background-size:46px 46px;mask-image:radial-gradient(70% 60% at 50% 0,#000,transparent 78%);-webkit-mask-image:radial-gradient(70% 60% at 50% 0,#000,transparent 78%);opacity:.5}
+      .hero-banner-inner{position:relative;z-index:1;padding:30px 22px 34px}
+      .landing-v2 .hero{padding:0}
+      .banner-desc{font-size:16px;color:var(--ink);font-weight:500;margin:0 0 12px;max-width:52ch;opacity:.9}
+      .hero .lede{margin-top:0}
+
+      /* 3D scene: perspective container, floating badge + credential cards */
+      .hero-scene{position:relative;width:340px;max-width:80vw;height:340px;display:grid;place-items:center;perspective:1100px;transform-style:preserve-3d}
+      .hero-scene .hero-badge{transform:rotateY(-16deg) rotateX(7deg);transform-style:preserve-3d;transition:transform .5s var(--ease)}
+      .hero-scene:hover .hero-badge{transform:rotateY(-8deg) rotateX(4deg)}
+      .hero-badge img{filter:drop-shadow(0 22px 30px rgba(6,20,14,.28))}
+      .hero-card{position:absolute;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);box-shadow:var(--sh-lg);white-space:nowrap}
+      .hero-card .hc-dot{width:9px;height:9px;border-radius:50%;background:var(--green-glow);box-shadow:0 0 0 4px rgba(16,160,76,.18)}
+      .hero-card .hc-dot.amber{background:var(--gold);box-shadow:0 0 0 4px rgba(251,174,64,.22)}
+      .hero-card-1{top:34px;left:-6px;transform:translateZ(60px) rotate(-4deg);animation:float3d 6s ease-in-out infinite}
+      .hero-card-2{bottom:40px;right:-10px;transform:translateZ(90px) rotate(3deg);animation:float3d 6s ease-in-out infinite .8s}
+      @keyframes float3d{0%,100%{transform:translateZ(60px) translateY(0) rotate(-4deg)}50%{transform:translateZ(60px) translateY(-10px) rotate(-4deg)}}
+      .hero-card-2{animation-name:float3d2}
+      @keyframes float3d2{0%,100%{transform:translateZ(90px) translateY(0) rotate(3deg)}50%{transform:translateZ(90px) translateY(-12px) rotate(3deg)}}
+
+      /* ---- 3D depth on interactive cards ---- */
+      .pillars,.role-grid{perspective:1200px}
+      .pillar,.role-card{transform-style:preserve-3d;transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .2s}
+      .pillar:hover{transform:translateY(-6px) rotateX(4deg) rotateY(-3deg);box-shadow:0 30px 50px -18px rgba(11,26,19,.28)}
+      .role-card:hover{transform:translateY(-5px) rotateX(3deg);box-shadow:0 26px 44px -18px rgba(11,26,19,.26)}
+      .metric{transition:transform .25s var(--ease)}
+      .metric:hover{transform:translateY(-3px)}
+      .tb-qr{transform:rotate(-4deg) rotateY(14deg) rotateX(6deg);transition:transform .5s var(--ease)}
+      .trust-band:hover .tb-qr{transform:rotate(-2deg) rotateY(8deg) rotateX(3deg)}
+
+      @media(max-width:860px){
+        .hero-scene{height:280px}
+        .hero-card{font-size:12px;padding:9px 12px}
+      }
+      @media(prefers-reduced-motion:reduce){
+        .hero-card-1,.hero-card-2{animation:none}
+        .hero-scene .hero-badge,.pillar:hover,.role-card:hover,.tb-qr,.trust-band:hover .tb-qr{transform:none}
+      }
     `}</style>
   )
 }
@@ -1191,30 +1253,40 @@ function Overview({ onStart, onVerify }) {
   const comp = useCountUp(89.4)
   const labs = useCountUp(38)
   return (
-    <div className="page landing-v2"><div className="wrap">
-      <div className="hero">
-        <div>
-          <span className="eyebrow"><span className="pulse" />{t('hero_eyebrow')}</span>
-          <h1 className="serif">{t('hero_title')}</h1>
-          <p className="lede">{t('hero_lede')}</p>
-          <div className="hero-cta">
-            <button className="btn p" onClick={onStart}>{t('cta_register')}</button>
-            <button className="btn g" onClick={onVerify}>{t('cta_verify')}</button>
-          </div>
-          <div className="ticker">
-            <span className="chip"><span className="pulse" /><b>{Math.round(certs).toLocaleString('en-NG')}</b> {t('chip_active')}</span>
-            <span className="chip"><b>{comp.toFixed(1)}%</b> {t('chip_compliance')}</span>
-            <span className="chip">{t('chip_secure')}</span>
-          </div>
-          <p className="hero-fine">{t('hero_model')}</p>
-        </div>
-        <div className="hero-art">
-          <div className="hero-badge floaty">
-            <img src="/lagos-logo.png" alt="Lagos State Government coat of arms" />
-            <div className="hero-badge-ring" />
+    <div className="page landing-v2">
+      <div className="hero-banner">
+        <div className="hero-banner-inner wrap">
+          <div className="hero">
+            <div>
+              <span className="eyebrow"><span className="pulse" />{t('hero_eyebrow')}</span>
+              <h1 className="serif">{t('hero_title')}</h1>
+              <p className="banner-desc">SafePlate is the Lagos State unified platform for food handler, potable water and beverage safety, one place to register, test, certify, verify and monitor.</p>
+              <p className="lede">{t('hero_lede')}</p>
+              <div className="hero-cta">
+                <button className="btn p" onClick={onStart}>{t('cta_register')}</button>
+                <button className="btn g" onClick={onVerify}>{t('cta_verify')}</button>
+              </div>
+              <div className="ticker">
+                <span className="chip"><span className="pulse" /><b>{Math.round(certs).toLocaleString('en-NG')}</b> {t('chip_active')}</span>
+                <span className="chip"><b>{comp.toFixed(1)}%</b> {t('chip_compliance')}</span>
+                <span className="chip">{t('chip_secure')}</span>
+              </div>
+              <p className="hero-fine">{t('hero_model')}</p>
+            </div>
+            <div className="hero-art">
+              <div className="hero-scene">
+                <div className="hero-badge floaty">
+                  <img src="/lagos-logo.png" alt="Lagos State Government coat of arms" />
+                  <div className="hero-badge-ring" />
+                </div>
+                <div className="hero-card hero-card-1" aria-hidden="true"><span className="hc-dot" /> Verified certificate</div>
+                <div className="hero-card hero-card-2" aria-hidden="true"><span className="hc-dot amber" /> Water test passed</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      <div className="wrap">
 
       {/* Live metrics band */}
       <div className="metric-band reveal">
