@@ -192,14 +192,14 @@ function RegulatorModule({ session, tab, onTab }) {
     <div className="page"><div className="wrap">
       <div className="greeting"><h2 className="sec serif" style={{ margin: 0 }}>{agency} portal</h2><span className="muted" style={{ fontSize: 13 }}>{session.name}</span></div>
       {tab === 'home' && <RegulatorHome session={session} onTab={onTab} />}
-      {tab === 'review' && <><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
+      {tab === 'review' && <><AnomalySignals /><LabScorecards /><div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Analytics</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Live operational metrics across the programme.</p><Analytics /></div><LSMoHReview session={session} guard={guard} audit={audit} /><AppealsList agency="LSMoH" /><SupportTickets /></>}
       {tab === 'certificates' && <CertAdmin guard={guard} audit={audit} />}
       {tab === 'enforcement' && <><Enforcement guard={guard} audit={audit} agency={agency} session={session} /><AppealsList agency="LASEPA" /></>}
       {tab === 'complaints' && <ComplaintsQueue session={session} audit={audit} readOnly={agency === 'LSMoH'} />}
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} session={session} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
-      {tab === 'audit' && <AuditPanel />}
+      {tab === 'audit' && <>{agency === 'LSMoH' && <ErasureQueue guard={guard} />}<AuditPanel /></>}
       {modal}
     </div></div>
   )
@@ -684,6 +684,206 @@ function Accreditation({ guard, audit, session }) {
   )
 }
 
+
+function LabScorecards() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    let on = true
+    Promise.all([
+      store.listAllOrders().catch(() => []),
+      store.listAllCertificates().catch(() => []),
+    ]).then(([orders, certs]) => {
+      if (!on) return
+      const labs = {}
+      orders.forEach(o => {
+        if (!o.lab) return
+        const r = labs[o.lab] || (labs[o.lab] = { lab: o.lab, orders: 0, withResults: 0, flagged: 0, certs: 0 })
+        r.orders++
+        if (o.results) r.withResults++
+        if (/Rejected|Flagged/.test(o.status || '')) r.flagged++
+      })
+      certs.forEach(c => { if (c.lab && labs[c.lab]) labs[c.lab].certs++ })
+      const list = Object.values(labs).map(r => ({
+        ...r,
+        completion: r.orders ? Math.round((r.withResults / r.orders) * 100) : 0,
+        flagRate: r.orders ? Math.round((r.flagged / r.orders) * 100) : 0,
+      })).sort((a, b) => b.orders - a.orders)
+      setRows(list)
+    })
+    return () => { on = false }
+  }, [])
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Laboratory scorecards</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>
+        Throughput and outcomes per accredited laboratory. A very low flag rate on
+        high volume, or stalled completion, is worth a closer look.
+      </p>
+      {rows === null && <div className="muted">Loading…</div>}
+      {rows && rows.length === 0 && <div className="note">No laboratory activity recorded yet.</div>}
+      {rows && rows.length > 0 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {rows.map(r => (
+            <div key={r.lab} className="card">
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+                <b style={{ fontSize: 15 }}>{r.lab}</b>
+                <span className="muted" style={{ fontSize: 12.5 }}>{r.orders} order{r.orders === 1 ? '' : 's'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10 }}>
+                <div><div style={{ fontSize: 20, fontWeight: 700 }}>{r.completion}%</div><div className="muted" style={{ fontSize: 12 }}>Results submitted</div></div>
+                <div><div style={{ fontSize: 20, fontWeight: 700 }}>{r.certs}</div><div className="muted" style={{ fontSize: 12 }}>Certificates issued</div></div>
+                <div><div style={{ fontSize: 20, fontWeight: 700, color: r.flagRate === 0 && r.orders >= 8 ? '#9a6200' : 'inherit' }}>{r.flagRate}%</div><div className="muted" style={{ fontSize: 12 }}>Flag rate</div></div>
+              </div>
+              <div style={{ marginTop: 12, height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
+                <div style={{ width: r.completion + '%', height: '100%', background: 'var(--green)' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AnomalySignals() {
+  const [signals, setSignals] = useState(null)
+  useEffect(() => {
+    let on = true
+    Promise.all([
+      store.listAllOrders().catch(() => []),
+      store.listAllCertificates().catch(() => []),
+      store.listComplaints().catch(() => []),
+    ]).then(([orders, certs, complaints]) => {
+      if (!on) return
+      const out = []
+
+      // 1) Labs with an unusually high pass rate. A lab that never fails a sample
+      //    is a classic quality-and-integrity red flag worth a human look.
+      const byLab = {}
+      orders.forEach(o => {
+        if (!o.lab || !o.results) return
+        const rec = byLab[o.lab] || (byLab[o.lab] = { total: 0, pass: 0 })
+        rec.total++
+        const failed = /Rejected|Flagged/.test(o.status || '') || (o.results && Object.values(o.results).some(v => /fail|positive|detected/i.test(String(v))))
+        if (!failed) rec.pass++
+      })
+      Object.entries(byLab).forEach(([lab, r]) => {
+        if (r.total >= 8) {
+          const rate = r.pass / r.total
+          if (rate >= 0.98) out.push({ level: 'high', title: lab + ' passes nearly every sample', detail: Math.round(rate * 100) + '% pass rate across ' + r.total + ' results. Review a sample of this lab\u2019s submissions.' })
+        }
+      })
+
+      // 2) Certificates issued suspiciously fast after the order was created.
+      const certById = {}; certs.forEach(c => { certById[c.safeplateId || c.safeplate_id] = c })
+      let fast = 0
+      orders.forEach(o => {
+        const c = certById[o.safeplateId]
+        if (!c) return
+        const created = new Date(o.createdAt || o.created_at).getTime()
+        const issued = new Date(c.issued || c.issued_at || 0).getTime()
+        if (issued && created && (issued - created) < 2 * 3600000 && issued >= created) fast++
+      })
+      if (fast >= 3) out.push({ level: 'high', title: fast + ' certificates issued within two hours of testing', detail: 'Turnaround this fast is implausible for the mandated panel and may indicate results were not run. Verify the underlying lab work.' })
+
+      // 3) Complaint clusters by establishment.
+      const byEst = {}
+      complaints.forEach(c => { const k = (c.establishment || '').trim().toLowerCase(); if (k) byEst[k] = (byEst[k] || 0) + 1 })
+      Object.entries(byEst).forEach(([est, n]) => {
+        if (n >= 3) out.push({ level: 'medium', title: 'Multiple complaints about the same establishment', detail: n + ' separate reports name "' + est + '". Consider prioritising an inspection.' })
+      })
+
+      // 4) Expired certificates still marked valid (data integrity).
+      const now = Date.now()
+      const staleValid = certs.filter(c => (c.status === 'VALID') && c.expiry && new Date(c.expiry).getTime() < now).length
+      if (staleValid > 0) out.push({ level: 'medium', title: staleValid + ' certificate' + (staleValid === 1 ? '' : 's') + ' past expiry but still marked valid', detail: 'These should have lapsed. Check the expiry job and revoke if appropriate.' })
+
+      setSignals(out)
+    })
+    return () => { on = false }
+  }, [])
+
+  const TONE = { high: { bg: '#f7eaea', fg: '#a4271d', dot: '#b3261e', label: 'High' }, medium: { bg: '#fdf3e3', fg: '#9a6200', dot: '#FBAE40', label: 'Review' } }
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Integrity signals</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>
+        Automated checks that flag patterns worth a human look. A signal is a
+        prompt to investigate, never a finding of wrongdoing on its own.
+      </p>
+      {signals === null && <div className="muted">Scanning…</div>}
+      {signals && signals.length === 0 && <div className="note">No anomalies detected in the current data.</div>}
+      {signals && signals.length > 0 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {signals.map((s, i) => {
+            const tn = TONE[s.level] || TONE.medium
+            return (
+              <div key={i} className="card" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ flexShrink: 0, marginTop: 2, display: 'inline-flex', alignItems: 'center', gap: 6, background: tn.bg, color: tn.fg, padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, background: tn.dot }} />{tn.label}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <b style={{ fontSize: 14.5 }}>{s.title}</b>
+                  <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>{s.detail}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ErasureQueue({ guard }) {
+  const [rows, setRows] = useState(null)
+  const [note, setNote] = useState({})
+  async function load() { try { setRows(await store.listErasureRequests()) } catch (e) { setRows([]) } }
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
+  async function resolve(r, outcome) {
+    await store.resolveErasure(r.safeplateId, outcome, note[r.safeplateId] || '', 'Data Protection Officer')
+    toast(outcome === 'upheld' ? 'Erasure upheld and personal data minimised.' : 'Erasure request declined and recorded.')
+    load()
+  }
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Erasure requests (NDPA)</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>
+        Data subjects who have asked for their record to be erased. Upholding a
+        request minimises personal data while keeping the certification skeleton
+        required for the statutory public-health record. Declining must be
+        justified, for example an unexpired certificate that must stand.
+      </p>
+      {rows === null && <div className="muted">Loading…</div>}
+      {rows && rows.length === 0 && <div className="note">No erasure requests are pending.</div>}
+      {rows && rows.length > 0 && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {rows.map(r => (
+            <div key={r.safeplateId} className="card">
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <b>{r.name || 'Unnamed record'}</b>
+                  <div className="mono" style={{ fontSize: 13, color: 'var(--muted)' }}>{r.safeplateId}</div>
+                  <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+                    Reference <span className="mono">{r.erasureRef || 'n/a'}</span>
+                    {r.erasureAt && <> · lodged {new Date(r.erasureAt).toLocaleDateString('en-GB')}</>}
+                  </div>
+                </div>
+              </div>
+              <div className="field" style={{ marginTop: 10 }}>
+                <input value={note[r.safeplateId] || ''} onChange={e => setNote(n => ({ ...n, [r.safeplateId]: e.target.value }))} placeholder="Decision note (required to decline)" />
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button className="btn danger sm" onClick={() => guard('Uphold erasure for ' + r.safeplateId + ' and minimise their personal data', () => resolve(r, 'upheld'))}>Uphold erasure</button>
+                <button className="btn sm" disabled={!(note[r.safeplateId] || '').trim()} onClick={() => guard('Decline erasure for ' + r.safeplateId, () => resolve(r, 'declined'))} title={(note[r.safeplateId] || '').trim() ? '' : 'A note is required to decline'}>Decline with reason</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function AuditPanel() {
   const [rows, setRows] = useState([])

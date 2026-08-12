@@ -441,6 +441,110 @@ const store = {
     if (SUPABASE_READY) { const { error } = await supabase.from('audit_log').insert(row); if (error) console.warn('Audit entry could not be written:', error.message); return row }
     const db = DEMO.read(); db.audit = db.audit || []; db.audit.unshift(row); DEMO.write(db); return row
   },
+
+  // --- NDPA data-subject rights (items 19-20) ---------------------------------
+  // Portability: assemble everything held about one handler into a single plain
+  // object the person can download. We deliberately gather from every store that
+  // holds their data so the export is honest and complete.
+  async exportMyData(session) {
+    const handler = await this.getMyHandler(session)
+    if (!handler) return { exportedAt: new Date().toISOString(), note: 'No certification record was found for your account.', account: { email: session?.email || null } }
+    const id = handler.safeplateId
+    const [cert, order] = await Promise.all([
+      this.verifyCertificate(id).catch(() => null),
+      this.getOrderFor(id).catch(() => null),
+    ])
+    // Redact the raw test result payloads and NIN in the portable copy: the
+    // person can see that results exist and their status, but we do not re-expose
+    // decrypted health data or the full national ID in a downloadable file.
+    const safeOrder = order ? { id: order.id, lab: order.lab, tests: order.tests, status: order.status, createdAt: order.createdAt } : null
+    const safeHandler = { ...handler }
+    if (safeHandler.nin) safeHandler.nin = String(safeHandler.nin).replace(/.(?=.{4})/g, '*')
+    delete safeHandler.photo // referenced separately; large and not needed in the JSON
+    return {
+      exportedAt: new Date().toISOString(),
+      dataController: 'Lagos State Ministry of Health (SafePlate)',
+      subject: { safeplateId: id, name: handler.name, email: handler.email || session?.email || null },
+      consent: {
+        given: handler.consentGiven === true,
+        at: handler.consentAt || null,
+        version: handler.consentVersion || null,
+      },
+      personalData: safeHandler,
+      certificate: cert || null,
+      testOrder: safeOrder,
+      note: 'This is a portable copy of the data SafePlate holds about you. Test results are shown by status only; decrypted health data and your full National ID are not included in this file for your protection.',
+    }
+  },
+
+  // DPO side: list handlers with a pending erasure request, so the Data
+  // Protection Officer can see and action them. Returns a light projection, never
+  // the health payload.
+  async listErasureRequests() {
+    if (SUPABASE_READY) {
+      const { data } = await supabase.from('food_handlers').select('safeplate_id,name,email,erasure_ref,erasure_at,erasure_requested').eq('erasure_requested', true).order('erasure_at', { ascending: true })
+      return camelList(data)
+    }
+    const db = DEMO.read()
+    return Object.values(db.handlers || {}).filter(h => h && h.erasureRequested).map(h => ({ safeplateId: h.safeplateId, name: h.name, email: h.email, erasureRef: h.erasureRef, erasureAt: h.erasureAt }))
+  },
+
+  // DPO resolves a request: either upholds it (clears the personal fields while
+  // keeping the certification skeleton needed for the statutory record) or
+  // declines it with a reason. Either way it is audited and the pending flag
+  // clears. We never silently vanish a record; we minimise it.
+  async resolveErasure(safeplateId, outcome, note, actor) {
+    const upheld = outcome === 'upheld'
+    await this.appendAudit({
+      actor: actor || 'Data Protection Officer',
+      role: 'dpo',
+      action: upheld ? 'Erasure request upheld, personal data minimised' : 'Erasure request declined',
+      subject: safeplateId,
+      reason: (note || '').slice(0, 500),
+    })
+    if (SUPABASE_READY) {
+      const patch = upheld
+        ? { erasure_requested: false, name: 'Erased at data subject request', phone: null, address: null, nin: null, photo: null, email: null, dob: null, erasure_at: new Date().toISOString() }
+        : { erasure_requested: false }
+      const { error } = await supabase.from('food_handlers').update(patch).eq('safeplate_id', safeplateId)
+      if (error) throw new Error(error.message)
+      return { upheld }
+    }
+    const db = DEMO.read()
+    const h = (db.handlers || {})[safeplateId]
+    if (h) {
+      if (upheld) db.handlers[safeplateId] = { ...h, erasureRequested: false, name: 'Erased at data subject request', phone: '', address: '', nin: '', photo: '', email: '', dob: '' }
+      else db.handlers[safeplateId] = { ...h, erasureRequested: false }
+      DEMO.write(db)
+    }
+    return { upheld }
+  },
+
+  // Erasure: certification and health records carry a statutory public-health
+  // retention obligation, so this lodges an audited erasure request for the Data
+  // Protection Officer to action rather than silently hard-deleting a record. The
+  // person is told exactly that. Returns a reference they can keep.
+  async requestErasure(session, reason) {
+    const handler = await this.getMyHandler(session)
+    const id = handler ? handler.safeplateId : null
+    const reference = 'ERZ-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 899999))
+    await this.appendAudit({
+      actor: session?.email || 'data subject',
+      role: 'data_subject',
+      action: 'Erasure request lodged under NDPA',
+      subject: id || (session?.email || 'unknown'),
+      reference,
+      reason: (reason || '').slice(0, 500),
+    })
+    // Flag the record so a regulator sees the pending request against it.
+    if (id) {
+      try {
+        if (SUPABASE_READY) { await supabase.from('food_handlers').update({ erasure_requested: true, erasure_ref: reference, erasure_at: new Date().toISOString() }).eq('safeplate_id', id) }
+        else { const db = DEMO.read(); if (db.handlers && db.handlers[id]) { db.handlers[id] = { ...db.handlers[id], erasureRequested: true, erasureRef: reference, erasureAt: new Date().toISOString() }; DEMO.write(db) } }
+      } catch (e) { /* the audited request is the source of truth; flagging is best-effort */ }
+    }
+    return { reference, recordFound: Boolean(id) }
+  },
   async listAudit() {
     if (SUPABASE_READY) { const { data } = await supabase.from('audit_log').select('*').order('ts', { ascending: false }).limit(200); return data || [] }
     const db = DEMO.read(); return db.audit || []

@@ -34,6 +34,7 @@ import { STAFF_STATUSES } from './lib/constants.ts'
 import { SANCTION_LADDER, SANCTION_SEVERE, MINI } from './lib/constants.ts'
 import { Seal, CrossSeal } from './components/Seals.tsx'
 import QrScanner from './components/QrScanner.tsx'
+import Directory from './components/Directory.tsx'
 const SterlingModule = lazy(() => import('./portals/SterlingPortal.tsx'))
 const FoodHandlerModule = lazy(() => import('./portals/FoodHandlerPortal.tsx'))
 const LaboratoryModule = lazy(() => import('./portals/LaboratoryPortal.tsx'))
@@ -57,7 +58,9 @@ function Toasts() {
     return registerToast(add)
   }, [])
   if (!items.length) return null
-  return <div className="toasts">{items.map(i => <div key={i.id} className={'toast ' + (i.kind || '')}>{i.msg}</div>)}</div>
+  // aria-live region so screen-reader users hear status messages. Errors are
+  // assertive (interrupt), successes are polite. WCAG 2.1 AA 4.1.3.
+  return <div className="toasts" role="status" aria-live="polite" aria-atomic="true">{items.map(i => <div key={i.id} className={'toast ' + (i.kind || '')} role={i.kind === 'err' ? 'alert' : undefined}>{i.msg}</div>)}</div>
 }
 function loadPaystack() {
   return new Promise((resolve, reject) => {
@@ -114,7 +117,7 @@ function useIdleTimeout(session, onTimeout) {
 
 
 const PILLARS = [
-  { n: '1', title: 'Mandatory testing', body: 'Standardised biannual testing for every food handler, through accredited ISO-certified laboratories.' },
+  { n: '1', title: 'Mandatory testing', body: 'Standardised biannual testing for food handlers, and testing of potable water and beverages, through accredited ISO-certified laboratories.' },
   { n: '2', title: 'Digital platform', body: 'Register, schedule, pay, get results, get certified, and stay monitored, end to end.' },
   { n: '3', title: 'Coordinated enforcement', body: 'LSMoH, LASEPA and HEFAMAA aligned under one operational system with a live audit trail.' },
   { n: '4', title: 'Self-sustaining finance', body: 'A standardised fee and transparent waterfall keep the programme running without indefinite public funding.' }
@@ -317,6 +320,7 @@ function tabsForSession(session) {
     { id: 'system', label: t('nav_system') },
     { id: 'impact', label: t('nav_impact') },
     { id: 'report', label: 'Report a concern' },
+    { id: 'directory', label: 'Directory' },
     { id: 'verify', label: t('nav_verify') }
   ]
   switch (session.role) {
@@ -348,11 +352,32 @@ function tabsForSession(session) {
 function Styles() {
   return (
     <style>{`
-      :root{--green:${PALETTE.green};--gold:${PALETTE.gold};--navy:${PALETTE.navy};--ink:#0e1f18;--muted:#5b6b64;--line:#e3e7e4;--paper:#f7faf8;--green-pale:#e9f3ec;--gold-pale:#fdf3e0;--navy-pale:#eaf0f6;--green-deep:#044d2b;--green-glow:#12a150;--gold-deep:#e8912a;--mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;--r-sm:8px;--r:11px;--r-lg:16px;--r-xl:22px;--sh-sm:0 1px 2px rgba(16,38,28,.05),0 1px 3px rgba(16,38,28,.04);--sh-md:0 4px 12px rgba(16,38,28,.07),0 2px 4px rgba(16,38,28,.05);--sh-lg:0 18px 40px rgba(16,38,28,.12),0 6px 14px rgba(16,38,28,.08);--sh-glow:0 8px 30px rgba(0,102,0,.18);--ease:cubic-bezier(.22,.61,.36,1);--accent:${PALETTE.green}}
+      :root{
+        --green:${PALETTE.green};--gold:${PALETTE.gold};--navy:${PALETTE.navy};
+        --ink:#0b1a13;--muted:#5a6b62;--faint:#8a9a90;
+        --line:#e5ebe6;--line-strong:#d3ddd6;
+        --paper:#f4f8f5;--surface:#ffffff;--surface-2:#f8fbf9;
+        --green-pale:#e8f4ec;--green-soft:#d5ecdd;--gold-pale:#fdf4e2;--navy-pale:#eef2f7;
+        --green-deep:#034023;--green-glow:#10a04c;--green-bright:#0a8a44;--gold-deep:#d98a1f;
+        --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+        --display:'Fraunces','Lora',Georgia,serif;
+        --sans:'Plus Jakarta Sans','Inter',system-ui,-apple-system,sans-serif;
+        --r-xs:7px;--r-sm:10px;--r:13px;--r-lg:18px;--r-xl:26px;--r-2xl:32px;
+        --sh-xs:0 1px 2px rgba(11,26,19,.05);
+        --sh-sm:0 1px 3px rgba(11,26,19,.05),0 2px 8px -2px rgba(11,26,19,.06);
+        --sh-md:0 2px 6px rgba(11,26,19,.05),0 12px 28px -8px rgba(11,26,19,.12);
+        --sh-lg:0 4px 10px rgba(11,26,19,.06),0 28px 56px -14px rgba(11,26,19,.20);
+        --sh-glow:0 10px 30px -6px rgba(6,102,52,.42);
+        --sh-gold:0 10px 30px -6px rgba(217,138,31,.36);
+        --ease:cubic-bezier(.22,.61,.36,1);--spring:cubic-bezier(.34,1.56,.64,1);
+        --accent:${PALETTE.green};
+        --grad-green:linear-gradient(135deg,#0a8a44 0%,#046634 55%,#034023 100%);
+        --grad-surface:linear-gradient(180deg,#ffffff 0%,#fbfdfc 100%);
+      }
       *{box-sizing:border-box}
       html,body,#root{margin:0;padding:0}
-      body{background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
-      h1,h2,h3,h4,.serif{font-family:'Lora',Georgia,serif}
+      body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:'cv02','cv03','cv04','ss01'}
+      h1,h2,h3,h4,.serif{font-family:var(--display);font-optical-sizing:auto;letter-spacing:-.02em;font-weight:600}
       button{font-family:inherit;cursor:pointer}
       .wrap{max-width:1100px;margin:0 auto;padding:0 22px}
       .hdr .wrap{max-width:none;padding:0 26px}
@@ -658,7 +683,7 @@ function Styles() {
       .consent-btns{display:flex;gap:10px}
       .consent .btn{background:transparent;color:#fff;border-color:rgba(255,255,255,.3)}
       .consent .btn.p{background:var(--gold);color:#3a2600;border-color:var(--gold)}
-      .lnk{background:none;border:0;color:var(--gold);font-weight:700;cursor:pointer;padding:0;text-decoration:underline;font:inherit}
+      .lnk{background:none;border:0;color:#9a6200;font-weight:700;cursor:pointer;padding:0;text-decoration:underline;font:inherit}
       .privacy{max-width:640px;max-height:82vh;overflow:auto}
       .privacy h4{margin:15px 0 3px;font-size:14.5px;font-family:'Lora',serif}
       .privacy p{margin:0 0 4px;font-size:13.5px}
@@ -767,6 +792,140 @@ function Styles() {
         .btn{padding:9px 13px}
       }
       @media(prefers-reduced-motion:reduce){.reveal,.reveal.in,.rise,.seal,.toast,.floaty,.skel,.tile,.chartgrid .chartcard{animation:none!important;opacity:1!important;transform:none!important}.btn:hover,.tile:hover,.pillar:hover,.role-card:hover,.sidelink:hover{transform:none}}
+
+      /* ============================================================
+         v2 ELEVATION LAYER — materiality, depth, refined hierarchy
+         ============================================================ */
+      body{background:
+        radial-gradient(1100px 520px at 8% -8%, rgba(16,160,76,.10), transparent 60%),
+        radial-gradient(900px 480px at 100% 0%, rgba(251,174,64,.09), transparent 55%),
+        linear-gradient(180deg,#f0f7f2 0%, var(--paper) 40%) fixed;
+      }
+
+      /* Typographic scale + rhythm */
+      .serif,h1,h2,h3,h4{letter-spacing:-.022em;font-weight:600}
+      .hero h1{font-weight:600;letter-spacing:-.032em}
+      h2.sec{font-weight:600;letter-spacing:-.028em}
+      .kicker{color:var(--gold-deep);filter:none;font-weight:800;letter-spacing:.14em;font-size:11.5px}
+      .eyebrow{font-weight:700;background:linear-gradient(180deg,#fff,#f4faf6);border-color:var(--green-soft);box-shadow:var(--sh-xs);color:var(--green-deep)}
+
+      /* Government bar — richer, layered */
+      .govbar{background:var(--grad-green);box-shadow:inset 0 -1px 0 rgba(255,255,255,.08)}
+
+      /* Header — glassy, subtle depth */
+      .hdr{background:rgba(255,255,255,.82);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid rgba(210,221,214,.7)}
+      .hdr.sc{box-shadow:0 10px 30px -12px rgba(11,26,19,.14)}
+      .brand b{font-family:var(--display);letter-spacing:-.02em}
+      .navtab{border-radius:10px;font-weight:600}
+      .navtab.on{background:linear-gradient(180deg,var(--green-pale),#dff0e6);color:var(--green-deep);box-shadow:inset 0 0 0 1px rgba(16,160,76,.14)}
+      .navtab:after{height:0}
+
+      /* Buttons — confident, tactile */
+      .btn{border-radius:var(--r);font-weight:600;letter-spacing:-.005em;box-shadow:var(--sh-xs);background:var(--grad-surface)}
+      .btn:hover{border-color:var(--line-strong);box-shadow:var(--sh-sm)}
+      .btn.p{background:var(--grad-green);border:1px solid var(--green-deep);color:#fff;box-shadow:0 1px 2px rgba(3,64,35,.3),0 8px 20px -8px rgba(6,102,52,.5)}
+      .btn.p:hover{box-shadow:var(--sh-glow);filter:brightness(1.04)}
+      .btn.g{background:linear-gradient(135deg,#fdc063,#f2a838);border:1px solid var(--gold-deep);color:#3a2600}
+      .btn.g:hover{box-shadow:var(--sh-gold)}
+      .btn.ghost{box-shadow:none;background:none}
+
+      /* Cards & surfaces — soft depth, hairline ring */
+      .card{background:var(--grad-surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-sm)}
+      .card:hover{box-shadow:var(--sh-md)}
+      .pillar,.role-card,.tile,.chartcard,.journey,.verify-panel,.ord,.attn-pill,.lab-row{background:var(--grad-surface)}
+      .verify-panel{border-radius:var(--r-xl);box-shadow:var(--sh-md)}
+
+      /* Pillars — number chip becomes a jewel */
+      .pillar{border-radius:var(--r-lg)}
+      .pillar .num{background:var(--grad-green);box-shadow:0 6px 14px -4px rgba(6,102,52,.5);border-radius:10px;width:34px;height:34px;font-family:var(--display)}
+      .pillar h3{letter-spacing:-.02em}
+
+      /* Burden stat cells — deep, premium navy with texture */
+      .burden .cell{background:linear-gradient(155deg,#0a2a4a 0%, var(--navy) 60%, #04223e 100%);border-radius:var(--r-lg);box-shadow:var(--sh-md);position:relative;overflow:hidden}
+      .burden .cell:before{content:'';position:absolute;inset:0;background:radial-gradient(420px 200px at 100% 0,rgba(251,174,64,.14),transparent 60%);pointer-events:none}
+      .burden .cell .big{font-family:var(--display);background:linear-gradient(180deg,#ffd88a,var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+
+      /* Stat tiles — the accent rail becomes a gradient, numbers sing */
+      .tile{border-radius:var(--r-lg);box-shadow:var(--sh-sm)}
+      .tile:before{width:3px;background:linear-gradient(180deg,var(--green-glow),var(--green))}
+      .tile .v{font-family:var(--display);font-weight:600;color:var(--ink)}
+
+      /* Badges & statuses — pill-perfect */
+      .badge{border-radius:100px;font-weight:700}
+      .status{font-weight:700}
+
+      /* Inputs — softer, focus glow refined */
+      .field input,.field select,.field textarea{background:#fff;border-color:var(--line-strong);border-radius:var(--r)}
+      .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green-bright);box-shadow:0 0 0 4px rgba(16,160,76,.14)}
+
+      /* Sidebar — cleaner rail, active state pops */
+      .sidebar{background:linear-gradient(180deg,#fff, #fafdfb)}
+      .sidelink.on{background:linear-gradient(90deg,var(--green-pale),transparent);box-shadow:inset 3px 0 0 var(--green)}
+      .apptop{background:rgba(255,255,255,.85);backdrop-filter:saturate(1.3) blur(12px);-webkit-backdrop-filter:saturate(1.3) blur(12px);border-top:3px solid transparent;border-image:var(--grad-green) 1;box-shadow:0 1px 0 rgba(210,221,214,.6)}
+
+      /* Chart cards — quiet elevation */
+      .chartcard{border-radius:var(--r-lg);box-shadow:var(--sh-sm);border-color:var(--line)}
+      .charttitle{letter-spacing:-.01em}
+
+      /* Trust result (verify) — hero moment */
+      .trust{border-radius:var(--r-2xl);box-shadow:var(--sh-lg)}
+      .trust.ok{background:linear-gradient(160deg,#eafaf0 0%,#fff 70%)}
+
+      /* Modals & panels — floating glass */
+      .modal{border-radius:var(--r-xl);box-shadow:var(--sh-lg);border:1px solid var(--line)}
+      .modal-bg{background:rgba(6,20,14,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+      .bellpanel,.avmenu,.wsmenu{border-radius:var(--r-lg);box-shadow:var(--sh-lg);border-color:var(--line)}
+
+      /* Toast — refined */
+      .toast{border-radius:var(--r);box-shadow:var(--sh-lg)}
+
+      /* Footer — richer */
+      .footer{background:linear-gradient(180deg,#04223e,var(--navy));color:#c6d4e2}
+      .footer b{font-family:var(--display)}
+
+      /* Chips & pills */
+      .chip{background:var(--grad-surface);box-shadow:var(--sh-xs)}
+      .chip b{font-family:var(--display)}
+
+      /* Section reveal easing already present; add gentle scale to cards on hover for tactility */
+      .role-card:hover{box-shadow:var(--sh-md);border-color:var(--green-soft)}
+
+      @media(prefers-reduced-motion:reduce){.hdr,.apptop{backdrop-filter:none;-webkit-backdrop-filter:none}}
+
+      /* ---- Landing v2 composition ---- */
+      .landing-v2 .hero{padding:26px 0 8px}
+      .hero-badge{position:relative;display:grid;place-items:center;width:300px;height:300px;max-width:74vw}
+      .hero-badge img{width:230px;max-width:60vw;filter:drop-shadow(0 14px 34px rgba(6,20,14,.18));position:relative;z-index:1}
+      .hero-badge-ring{position:absolute;inset:0;border-radius:50%;background:
+        radial-gradient(circle at 50% 42%, rgba(16,160,76,.14), transparent 58%);
+        box-shadow:inset 0 0 0 1px rgba(16,160,76,.12)}
+      .hero-badge:before{content:'';position:absolute;width:260px;height:260px;border-radius:50%;border:1px dashed rgba(6,102,52,.22);animation:spin 60s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}
+
+      .metric-band{margin:38px 0 8px;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--sh-sm)}
+      .metric{background:var(--grad-surface);padding:24px 22px;text-align:center}
+      .metric .m-v{font-family:var(--display);font-weight:600;font-size:clamp(26px,3.6vw,38px);letter-spacing:-.03em;color:var(--green-deep);line-height:1}
+      .metric .m-k{margin-top:8px;font-size:12.5px;color:var(--muted);font-weight:500}
+
+      .lsec{margin:56px 0}
+      .lsec-head{max-width:640px;margin-bottom:26px}
+      .lsec-head .sec{margin:8px 0 8px}
+
+      .trust-band{margin:48px 0 8px;background:linear-gradient(150deg,#0a2a4a 0%,var(--navy) 55%,#04223e 100%);border-radius:var(--r-2xl);padding:clamp(28px,4vw,48px);display:grid;grid-template-columns:1.3fr .8fr;gap:32px;align-items:center;box-shadow:var(--sh-lg);position:relative;overflow:hidden}
+      .trust-band:before{content:'';position:absolute;inset:0;background:radial-gradient(600px 300px at 100% 0,rgba(251,174,64,.16),transparent 60%);pointer-events:none}
+      .trust-band>*{position:relative;z-index:1}
+      .trust-band-art{display:grid;place-items:center}
+      .tb-qr{background:#fff;border-radius:var(--r-lg);padding:18px;box-shadow:var(--sh-lg);transform:rotate(-4deg)}
+      .tb-qr-grid{display:grid;grid-template-columns:repeat(7,16px);grid-auto-rows:16px;gap:3px}
+      .tb-qr-grid span{background:#eef2ef;border-radius:3px}
+      .tb-qr-grid span.on{background:var(--navy)}
+
+      @media(max-width:860px){
+        .metric-band{grid-template-columns:repeat(2,1fr)}
+        .trust-band{grid-template-columns:1fr}
+        .trust-band-art{display:none}
+      }
+      @media(prefers-reduced-motion:reduce){.hero-badge:before{animation:none}}
     `}</style>
   )
 }
@@ -818,10 +977,10 @@ function Header({ tabs, active, onTab, onBrand, session, onSignIn, onSignOut, la
       <div className="wrap"><div className={'bar' + (session ? ' app' : '')}>
         <button className="brand" onClick={onBrand}>
           <img className="crest" src="/lagos-logo.png" alt="Lagos State Government" />
-          <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food handler safety</small></span>
+          <span className="wordmark"><b>Safe<span>Plate</span></b><small>Lagos food &amp; water safety</small></span>
         </button>
         <nav className="navtabs">
-          {tabs.map(tb => (<button key={tb.id} className={'navtab ' + (active === tb.id ? 'on' : '')} onClick={() => onTab(tb.id)}>{tb.label}</button>))}
+          {tabs.map(tb => (<button key={tb.id} className={'navtab ' + (active === tb.id ? 'on' : '')} aria-current={active === tb.id ? 'page' : undefined} onClick={() => onTab(tb.id)}>{tb.label}</button>))}
         </nav>
         <div className="actions">
           {admin && (
@@ -886,7 +1045,7 @@ function Sidebar({ tabs, active, onTab, onBrand, open, onClose }) {
         </button>
         <nav className="sidenav">
           {tabs.map(tb => (
-            <button key={tb.id} className={'sidelink' + (active === tb.id ? ' on' : '')} onClick={() => { onTab(tb.id); onClose() }}>
+            <button key={tb.id} className={'sidelink' + (active === tb.id ? ' on' : '')} aria-current={active === tb.id ? 'page' : undefined} onClick={() => { onTab(tb.id); onClose() }}>
               <NavIcon id={tb.id} /><span>{tb.label}</span>
             </button>
           ))}
@@ -1030,8 +1189,9 @@ function Footer({ onPrivacy }) {
 function Overview({ onStart, onVerify }) {
   const certs = useCountUp(14892)
   const comp = useCountUp(89.4)
+  const labs = useCountUp(38)
   return (
-    <div className="page"><div className="wrap">
+    <div className="page landing-v2"><div className="wrap">
       <div className="hero">
         <div>
           <span className="eyebrow"><span className="pulse" />{t('hero_eyebrow')}</span>
@@ -1048,7 +1208,50 @@ function Overview({ onStart, onVerify }) {
           </div>
           <p className="hero-fine">{t('hero_model')}</p>
         </div>
-        <div className="hero-art"><img className="floaty" src="/lagos-logo.png" alt="Lagos State Government coat of arms" /></div>
+        <div className="hero-art">
+          <div className="hero-badge floaty">
+            <img src="/lagos-logo.png" alt="Lagos State Government coat of arms" />
+            <div className="hero-badge-ring" />
+          </div>
+        </div>
+      </div>
+
+      {/* Live metrics band */}
+      <div className="metric-band reveal">
+        <div className="metric"><div className="m-v">{Math.round(certs).toLocaleString('en-NG')}</div><div className="m-k">Active certificates</div></div>
+        <div className="metric"><div className="m-v">{comp.toFixed(1)}%</div><div className="m-k">Statewide compliance</div></div>
+        <div className="metric"><div className="m-v">{Math.round(labs)}</div><div className="m-k">Accredited laboratories</div></div>
+        <div className="metric"><div className="m-v">₦0</div><div className="m-k">Hidden charges</div></div>
+      </div>
+
+      {/* How it works */}
+      <div className="lsec">
+        <div className="lsec-head reveal">
+          <span className="kicker">How SafePlate works</span>
+          <h2 className="sec serif">One system, from registration to certificate.</h2>
+          <p className="sub">A preventive, data-driven model that replaces fragmented checks and pays for itself.</p>
+        </div>
+        <div className="pillars">{PILLARS.map((p, i) => (
+          <div className="pillar reveal" key={p.n} style={{ animationDelay: (i * 0.08) + 's' }}><div className="num">{p.n}</div><h3 className="serif">{p.title}</h3><p>{p.body}</p></div>
+        ))}</div>
+      </div>
+
+      {/* Trust / verify band */}
+      <div className="trust-band reveal">
+        <div>
+          <span className="kicker" style={{ color: '#ffd88a' }}>Public trust</span>
+          <h2 className="serif" style={{ color: '#fff', fontSize: 'clamp(22px,3vw,30px)', margin: '8px 0 8px' }}>Anyone can verify a certificate in seconds.</h2>
+          <p style={{ color: '#c9dbe9', margin: '0 0 18px', maxWidth: '52ch', fontSize: 15 }}>Scan the QR on any SafePlate certificate, or search the SAFEPLATE ID, to confirm a food handler, water source or beverage producer is genuinely certified and in date.</p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="btn g" onClick={onVerify}>Verify a certificate</button>
+            <button className="btn" onClick={onStart} style={{ background: 'rgba(255,255,255,.08)', color: '#fff', borderColor: 'rgba(255,255,255,.25)' }}>Register as a handler</button>
+          </div>
+        </div>
+        <div className="trust-band-art" aria-hidden="true">
+          <div className="tb-qr">
+            <div className="tb-qr-grid">{Array.from({ length: 49 }).map((_, i) => <span key={i} className={((i * 7 + (i % 5) * 3) % 3 === 0) ? 'on' : ''} />)}</div>
+          </div>
+        </div>
       </div>
     </div></div>
   )
@@ -1607,7 +1810,7 @@ function PrivacyModal({ open, onClose }) {
   function erase() { try { Object.keys(localStorage).filter(k => k.indexOf('safeplate:') === 0).forEach(k => localStorage.removeItem(k)) } catch { /* ignore */ } onClose(); if (typeof window !== 'undefined') window.location.reload() }
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal privacy" onClick={e => e.stopPropagation()}>
+      <div className="modal privacy" role="dialog" aria-modal="true" aria-label="Privacy notice" onClick={e => e.stopPropagation()}>
         <div className="row-between" style={{ marginBottom: 6 }}>
           <h3 className="serif" style={{ margin: 0, fontSize: 22 }}>Privacy notice</h3>
           <button className="iconbtn" onClick={onClose} aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
@@ -1702,7 +1905,7 @@ export default function App() {
   useEffect(() => { seedDemo() }, [])
   useIdleTimeout(session, () => { signOut() })
   useEffect(() => {
-    function onHash() { const { route, param } = parseHash(); if (route === 'status') { setSpecial('status') } else if (route === 'verify') { setSpecial(null); setVerifyId(param || ''); setMode('app'); setTab('verify') } else { setSpecial(null) } }
+    function onHash() { const { route, param } = parseHash(); if (route === 'status') { setSpecial('status') } else if (route === 'verify') { setSpecial(null); setVerifyId(param || ''); setMode('app'); setTab('verify') } else if (route === 'directory') { setSpecial(null); setMode('app'); setTab('directory') } else { setSpecial(null) } }
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
@@ -1725,6 +1928,7 @@ export default function App() {
       if (tab === 'system') return <SystemPage />
       if (tab === 'impact') return <ImpactPage />
       if (tab === 'report') return <ReportConcern />
+      if (tab === 'directory') return <Directory />
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (eff.role === 'food_handler') return <Suspense fallback={<div style={{padding:24}} className="muted">Loading…</div>}><FoodHandlerModule session={eff} /></Suspense>

@@ -29,7 +29,7 @@ export function useGuard() {
       {toast && <div className="toast">{toast}</div>}
       {pending && (
         <div className="modal-bg" onClick={() => setPending(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Two-factor confirmation" onClick={e => e.stopPropagation()}>
             <div className="kicker" style={{ color: 'var(--green)' }}>Two-factor confirmation</div>
             <h3 className="serif" style={{ fontSize: 19, margin: '8px 0 6px' }}>{pending.label}</h3>
             <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>Enter the 6-digit code sent to your registered phone to authorise this action.</p>

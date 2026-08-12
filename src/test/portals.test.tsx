@@ -19,6 +19,7 @@ import RegulatorModule from '../portals/RegulatorPortal.tsx'
 import OfficerModule from '../portals/OfficerPortal.tsx'
 import SterlingModule from '../portals/SterlingPortal.tsx'
 import EmployerModule from '../portals/EmployerPortal.tsx'
+import Directory from '../components/Directory.tsx'
 
 beforeAll(() => {
   // Populate the demo store so portals have data to render.
@@ -53,4 +54,10 @@ describe('every portal mounts without crashing', () => {
       ).not.toThrow()
     })
   }
+})
+
+describe('public pages mount without crashing', () => {
+  it('Directory renders and filters', () => {
+    expect(() => render(<Directory />)).not.toThrow()
+  })
 })

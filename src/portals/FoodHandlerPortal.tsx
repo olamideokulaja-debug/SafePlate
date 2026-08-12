@@ -13,6 +13,8 @@ import { PAYSTACK_READY, PAYSTACK_PUBLIC_KEY, SUPABASE_READY } from '../lib/conf
 import NavIcon from '../components/NavIcon.tsx'
 import { AppealButton } from '../components/Appeals.tsx'
 import LabAvailability from '../components/LabAvailability.tsx'
+import DataRights from '../components/DataRights.tsx'
+import { downloadCertReminder } from '../lib/calendar.ts'
 
 function FoodDashboard({ data, session, onNew, onRenew }) {
   const { h, cert, order } = data
@@ -58,6 +60,7 @@ function FoodDashboard({ data, session, onNew, onRenew }) {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
                 <button className="btn g" onClick={() => generateCertPDF(cert)}>Download certificate (PDF)</button>
                 {h.paymentRef && <button className="btn" onClick={() => generateReceiptPDF({ reference: h.paymentRef, safeplateId: h.safeplateId, name: h.name, lab: h.lab, paidAt: h.paidAt, amount: h.paidAmount || FEE, type: 'FOOD' })}>Payment receipt</button>}
+                <button className="btn" onClick={() => downloadCertReminder(cert)}>Add renewal reminder to calendar</button>
               </div>
             </div>
             {(cert.photo || h.photo) && <img src={cert.photo || h.photo} alt="" style={{ width: 96, height: 112, objectFit: 'cover', borderRadius: 10, border: '2px solid var(--green)' }} />}
@@ -78,6 +81,7 @@ function FoodDashboard({ data, session, onNew, onRenew }) {
       )}
       {issue && <AppealButton kind="result" subject={h.safeplateId} agency="LSMoH" by={session.email} label="Lodge an appeal on this result" />}
       {!valid && !issue && <div className="note" style={{ marginTop: 4 }}>Your test is progressing. Once the Ministry approves your result, your Certificate of Fitness appears here.</div>}
+      <DataRights session={session} consent={{ given: h.consentGiven, at: h.consentAt, version: h.consentVersion }} />
       <button className="btn ghost sm" style={{ marginTop: 16 }} onClick={onNew}>Start a new registration</button>
     </div></div>
   )
