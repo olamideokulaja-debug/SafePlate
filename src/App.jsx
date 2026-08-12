@@ -13,7 +13,7 @@
   Stage 6  Sterling Bank escrow ledger, atomic waterfall release, reconciliation
 */
 
-import React, { useEffect, useMemo, useState, lazy, Suspense } from 'react'
+import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
@@ -379,7 +379,7 @@ function Styles() {
       body{background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:'cv02','cv03','cv04','ss01'}
       h1,h2,h3,h4,.serif{font-family:var(--display);font-optical-sizing:auto;letter-spacing:-.02em;font-weight:600}
       button{font-family:inherit;cursor:pointer}
-      .wrap{max-width:1100px;margin:0 auto;padding:0 22px}
+      .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
       .hdr .wrap{max-width:none;padding:0 26px}
       .sidebrand .wordmark b{white-space:nowrap}
       .govbar{background:var(--green);color:#fff;font-size:12.5px;letter-spacing:.02em}
@@ -951,24 +951,47 @@ function Styles() {
       .hero-banner:before{content:'';position:absolute;inset:0;pointer-events:none;
         background-image:linear-gradient(rgba(6,102,52,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(6,102,52,.05) 1px,transparent 1px);
         background-size:46px 46px;mask-image:radial-gradient(70% 60% at 50% 0,#000,transparent 78%);-webkit-mask-image:radial-gradient(70% 60% at 50% 0,#000,transparent 78%);opacity:.5}
-      .hero-banner-inner{position:relative;z-index:1;padding:30px 22px 34px}
+      .hero-banner-inner{position:relative;z-index:2;padding:34px 22px 40px;max-width:1280px;margin:0 auto}
       .landing-v2 .hero{padding:0}
       .banner-desc{font-size:16px;color:var(--ink);font-weight:500;margin:0 0 12px;max-width:52ch;opacity:.9}
       .hero .lede{margin-top:0}
 
-      /* 3D scene: perspective container, floating badge + credential cards */
-      .hero-scene{position:relative;width:340px;max-width:80vw;height:340px;display:grid;place-items:center;perspective:1100px;transform-style:preserve-3d}
-      .hero-scene .hero-badge{transform:rotateY(-16deg) rotateX(7deg);transform-style:preserve-3d;transition:transform .5s var(--ease)}
-      .hero-scene:hover .hero-badge{transform:rotateY(-8deg) rotateX(4deg)}
-      .hero-badge img{filter:drop-shadow(0 22px 30px rgba(6,20,14,.28))}
-      .hero-card{position:absolute;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);box-shadow:var(--sh-lg);white-space:nowrap}
+      /* ---- Side-filling floating 3D field ---- */
+      .hero-field{position:absolute;inset:0;z-index:1;pointer-events:none;transform-style:preserve-3d;perspective:1000px}
+      .hf-card{position:absolute;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.9);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:600;color:var(--ink);box-shadow:var(--sh-lg);white-space:nowrap;
+        transform:translate3d(calc(var(--mx,0)*var(--d,20px)*-1),calc(var(--my,0)*var(--d,20px)*-1),0) rotate(var(--rot,0deg));transition:transform .35s var(--ease)}
+      .hf-card .hc-dot{width:8px;height:8px;border-radius:50%;background:var(--green-glow);box-shadow:0 0 0 4px rgba(16,160,76,.18)}
+      .hf-card .hc-dot.amber{background:var(--gold);box-shadow:0 0 0 4px rgba(251,174,64,.22)}
+      .hf-c{top:19%;right:2.5%;--d:52px;--rot:5deg}
+      .hf-d{top:76%;right:5%;--d:34px;--rot:-4deg}
+      @media(max-width:1120px){.hf-c,.hf-d,.hf-qr{display:none}}
+      .hf-orb{position:absolute;border-radius:50%;filter:blur(2px);
+        transform:translate3d(calc(var(--mx,0)*var(--d,60px)*-1),calc(var(--my,0)*var(--d,60px)*-1),0);transition:transform .4s var(--ease)}
+      .hf-orb-1{width:150px;height:150px;top:6%;left:6%;--d:70px;background:radial-gradient(circle at 35% 30%,rgba(16,160,76,.20),rgba(16,160,76,.02) 68%)}
+      .hf-orb-2{width:170px;height:170px;bottom:4%;right:12%;--d:90px;background:radial-gradient(circle at 40% 35%,rgba(251,174,64,.22),rgba(251,174,64,.02) 68%)}
+      .hf-orb-3{width:120px;height:120px;top:44%;left:-2%;--d:52px;background:radial-gradient(circle at 40% 35%,rgba(0,51,102,.14),rgba(0,51,102,.01) 66%)}
+      .hf-ring{position:absolute;border-radius:50%;border:1.5px dashed rgba(6,102,52,.16);
+        transform:translate3d(calc(var(--mx,0)*var(--d,40px)*-1),calc(var(--my,0)*var(--d,40px)*-1),0);transition:transform .5s var(--ease)}
+      .hf-ring-1{width:230px;height:230px;top:30%;left:-4%;--d:40px}
+      .hf-ring-2{width:150px;height:150px;bottom:-4%;left:22%;--d:56px;border-color:rgba(217,138,31,.18)}
+      .hf-qr{position:absolute;top:52%;right:1.5%;background:#fff;border-radius:12px;padding:12px;box-shadow:var(--sh-lg);
+        transform:translate3d(calc(var(--mx,0)*60px*-1),calc(var(--my,0)*60px*-1),0) rotate(6deg);transition:transform .4s var(--ease)}
+      .hf-qr-grid{display:grid;grid-template-columns:repeat(6,11px);grid-auto-rows:11px;gap:2.5px}
+      .hf-qr-grid span{background:#eef2ef;border-radius:2px}
+      .hf-qr-grid span.on{background:var(--navy)}
+      @media(max-width:1100px){.hf-a,.hf-b,.hf-c,.hf-d,.hf-qr,.hf-ring{display:none}}
+
+      /* 3D scene: deeper perspective, parallax-reactive layers */
+      .hero-scene{position:relative;width:360px;max-width:82vw;height:360px;display:grid;place-items:center;perspective:1000px;transform-style:preserve-3d}
+      .hero-scene .hero-badge{transform:rotateY(calc(-16deg + var(--mx,0)*16deg)) rotateX(calc(7deg + var(--my,0)*-12deg));transform-style:preserve-3d;transition:transform .3s var(--ease)}
+      .hero-badge img{filter:drop-shadow(0 26px 34px rgba(6,20,14,.32))}
+      .hero-card{position:absolute;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);box-shadow:var(--sh-lg);white-space:nowrap}
       .hero-card .hc-dot{width:9px;height:9px;border-radius:50%;background:var(--green-glow);box-shadow:0 0 0 4px rgba(16,160,76,.18)}
       .hero-card .hc-dot.amber{background:var(--gold);box-shadow:0 0 0 4px rgba(251,174,64,.22)}
-      .hero-card-1{top:34px;left:-6px;transform:translateZ(60px) rotate(-4deg);animation:float3d 6s ease-in-out infinite}
-      .hero-card-2{bottom:40px;right:-10px;transform:translateZ(90px) rotate(3deg);animation:float3d 6s ease-in-out infinite .8s}
-      @keyframes float3d{0%,100%{transform:translateZ(60px) translateY(0) rotate(-4deg)}50%{transform:translateZ(60px) translateY(-10px) rotate(-4deg)}}
-      .hero-card-2{animation-name:float3d2}
-      @keyframes float3d2{0%,100%{transform:translateZ(90px) translateY(0) rotate(3deg)}50%{transform:translateZ(90px) translateY(-12px) rotate(3deg)}}
+      .hero-card-1{top:30px;left:-14px;transform:translate3d(calc(var(--mx,0)*-40px),calc(var(--my,0)*-40px),80px) rotate(-4deg);animation:float3d 6s ease-in-out infinite;transition:transform .3s var(--ease)}
+      .hero-card-2{bottom:38px;right:-18px;transform:translate3d(calc(var(--mx,0)*-56px),calc(var(--my,0)*-56px),110px) rotate(3deg);animation:float3d2 6s ease-in-out infinite .8s;transition:transform .3s var(--ease)}
+      @keyframes float3d{0%,100%{translate:0 0}50%{translate:0 -10px}}
+      @keyframes float3d2{0%,100%{translate:0 0}50%{translate:0 -12px}}
 
       /* ---- 3D depth on interactive cards ---- */
       .pillars,.role-grid{perspective:1200px}
@@ -987,6 +1010,7 @@ function Styles() {
       @media(prefers-reduced-motion:reduce){
         .hero-card-1,.hero-card-2{animation:none}
         .hero-scene .hero-badge,.pillar:hover,.role-card:hover,.tb-qr,.trust-band:hover .tb-qr{transform:none}
+        .hf-card,.hf-orb,.hf-ring,.hf-qr,.hero-card-1,.hero-card-2{transform:none!important}
       }
     `}</style>
   )
@@ -1252,12 +1276,40 @@ function Overview({ onStart, onVerify }) {
   const certs = useCountUp(14892)
   const comp = useCountUp(89.4)
   const labs = useCountUp(38)
+  const bannerRef = useRef(null)
+  useEffect(() => {
+    const el = bannerRef.current
+    if (!el) return
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    let raf = 0
+    const onMove = e => {
+      const r = el.getBoundingClientRect()
+      const mx = (e.clientX - r.left) / r.width - 0.5
+      const my = (e.clientY - r.top) / r.height - 0.5
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => { el.style.setProperty('--mx', mx.toFixed(3)); el.style.setProperty('--my', my.toFixed(3)) })
+    }
+    const onLeave = () => { el.style.setProperty('--mx', '0'); el.style.setProperty('--my', '0') }
+    el.addEventListener('mousemove', onMove); el.addEventListener('mouseleave', onLeave)
+    return () => { el.removeEventListener('mousemove', onMove); el.removeEventListener('mouseleave', onLeave); cancelAnimationFrame(raf) }
+  }, [])
   return (
     <div className="page landing-v2">
-      <div className="hero-banner">
-        <div className="hero-banner-inner wrap">
+      <div className="hero-banner" ref={bannerRef}>
+        {/* side-filling floating 3D field */}
+        <div className="hero-field" aria-hidden="true">
+          <div className="hf-card hf-c"><span className="hc-dot" /> Escrow released</div>
+          <div className="hf-card hf-d"><span className="hc-dot amber" /> Lab accredited</div>
+          <div className="hf-orb hf-orb-1" />
+          <div className="hf-orb hf-orb-2" />
+          <div className="hf-orb hf-orb-3" />
+          <div className="hf-ring hf-ring-1" />
+          <div className="hf-ring hf-ring-2" />
+          <div className="hf-qr" aria-hidden="true"><div className="hf-qr-grid">{Array.from({ length: 36 }).map((_, i) => <span key={i} className={((i * 5 + (i % 4) * 3) % 3 === 0) ? 'on' : ''} />)}</div></div>
+        </div>
+        <div className="hero-banner-inner">
           <div className="hero">
-            <div>
+            <div className="hero-copy">
               <span className="eyebrow"><span className="pulse" />{t('hero_eyebrow')}</span>
               <h1 className="serif">{t('hero_title')}</h1>
               <p className="banner-desc">SafePlate is the Lagos State unified platform for food handler, potable water and beverage safety, one place to register, test, certify, verify and monitor.</p>
