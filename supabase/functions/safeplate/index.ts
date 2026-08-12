@@ -62,6 +62,18 @@ async function tellHandler(db: any, safeplateId: string, message: string) {
 // Set this back to false to restore real 2FA once SMS works.
 const OTP_BYPASS = true
 
+// Resolve a Sterling caller's access level from the bank_staff table by email.
+// Least privilege: an unknown or suspended user is 'Viewer' and cannot act.
+// 'Officer' and 'Administrator' may instruct releases; only 'Administrator'
+// may manage other users. Enforced server-side so the UI cannot be bypassed.
+async function bankLevel(db: any, email: string | null): Promise<string> {
+  if (!email) return 'Viewer'
+  const { data } = await db.from('bank_staff').select('access_level, status').eq('email', email.toLowerCase()).maybeSingle()
+  if (!data) return 'Unlisted'
+  if (data.status && data.status !== 'Active') return 'Suspended'
+  return data.access_level || 'Viewer'
+}
+
 // Approve a single submitted result: issues the certificate, instructs the
 // escrow release, notifies. Returns { status, certNo? }. Shared by the single
 // approve-result action and the bulk-approve action so the rules never drift.
@@ -306,6 +318,14 @@ Deno.serve(async (req) => {
     // ---- Sterling releases escrow ----
     if (action === 'release-escrow') {
       if (me.role !== 'sterling') return json({ error: 'Forbidden' }, 403)
+      const { count: staffCount } = await db.from('bank_staff').select('id', { count: 'exact', head: true })
+      if ((staffCount || 0) > 0) {
+        // Access management is configured, so enforce it.
+        const lvl = await bankLevel(db, me.email)
+        if (!['Officer', 'Administrator'].includes(lvl)) {
+          return json({ error: 'Your bank access level (' + lvl + ') cannot instruct payments. A Sterling administrator must grant you Officer or Administrator access first.', level: lvl }, 403)
+        }
+      }
       const { data: rel } = await db.from('escrow_releases').select('*').eq('safeplate_id', body.safeplateId).eq('status', 'Instructed').maybeSingle()
       if (!rel) return json({ error: 'No approved release instruction for this ID' }, 409)
       const ts = new Date().toISOString()
