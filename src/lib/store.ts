@@ -5,7 +5,7 @@
 // exact runtime behaviour; tightening the types is a later, separate pass.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
-import { supabase, SUPABASE_READY } from './config.ts'
+import { supabase, SUPABASE_READY, SUPABASE_URL, SUPABASE_ANON_KEY } from './config.ts'
 import { LABS, LAGOS_LGAS } from './constants.ts'
 
 function labsView() {

@@ -3,8 +3,11 @@
 // setup so no other module reads import.meta.env directly.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+// SUPABASE_URL and SUPABASE_ANON_KEY are exported so the Edge Function caller
+// (store.fn) can build the request. Without these exports that call throws a
+// "SUPABASE_URL is not defined" ReferenceError in live mode.
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const SUPABASE_READY: boolean = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY)
 export const supabase: SupabaseClient | null =
