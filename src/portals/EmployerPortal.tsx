@@ -3,6 +3,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
+import { PALETTE } from '../lib/constants.ts'
+import { SUPABASE_READY, PAYSTACK_READY, payWithPaystack } from '../lib/config.ts'
+import { makeSafeplateId } from '../lib/helpers.ts'
 import { QRCodeSVG } from 'qrcode.react'
 import { store, labsView } from '../lib/store.ts'
 import { naira, FEE, WATER_FEE, MANDATORY_TESTS, LAGOS_LGAS, WEEKDAYS, STAFF_STATUSES } from '../lib/constants.ts'

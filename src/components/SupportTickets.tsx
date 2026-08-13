@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect } from 'react'
+import { smatch } from '../lib/helpers.ts'
 import { store } from '../lib/store.ts'
 
 export function SupportTickets() {

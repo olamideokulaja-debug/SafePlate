@@ -89,3 +89,14 @@ export const AUDIT_CATS = {
   'Access': { color: CHART[5], icon: 'verify', re: /sign|verif|decrypt|view|scan|login|attempt/ }
 }
 
+
+// Food handler registration wizard step labels (used by FoodHandlerPortal).
+export const STEP_LABELS = ['Register', 'Tests', 'Laboratory', 'Payment', 'Done']
+
+// Shared status helpers (used across portals and Insights). Moved out of App.jsx
+// so the lazy-loaded portal chunks can reference them without a ReferenceError.
+export function slaExceeded(order: any): boolean {
+  const t = order.submittedAt || order.createdAt
+  return t ? (Date.now() - new Date(t).getTime()) / 3600000 > 48 : false
+}
+export const statusColor = (s: string): string => /Approved|Certified|Released/.test(s) ? CHART[0] : /Flag|Reject|Overdue|Quarant/.test(s) ? CHART[4] : /Submitted|Pending|Testing/.test(s) ? CHART[1] : CHART[2]

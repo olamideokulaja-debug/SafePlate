@@ -3,8 +3,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect } from 'react'
+import { isValidEmail, isValidPhone } from '../lib/constants.ts'
+import { SUPABASE_READY } from '../lib/config.ts'
+import { smatch } from '../lib/helpers.ts'
 import { store, labsView } from '../lib/store.ts'
 import { naira, WATERFALL, WATER_WATERFALL, FUND_PER_TXN, FEE, CHART } from '../lib/constants.ts'
+import { WATER_FUND } from '../lib/water.ts'
 import { t } from '../lib/i18n.ts'
 import { toast } from '../lib/toast.ts'
 import useGuard from '../lib/useGuard.tsx'

@@ -3,10 +3,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
+import { SUPABASE_READY } from '../lib/config.ts'
+import { statusKey } from '../lib/helpers.ts'
 import * as XLSX from 'xlsx'
 import { unzipSync, zipSync } from 'fflate'
 import { store, labsView } from '../lib/store.ts'
-import { MANDATORY_TESTS } from '../lib/constants.ts'
+import { MANDATORY_TESTS, slaExceeded } from '../lib/constants.ts'
 import { t } from '../lib/i18n.ts'
 import { toast } from '../lib/toast.ts'
 import { AppealButton } from '../components/Appeals.tsx'

@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect } from 'react'
+import { WATER_WATERFALL } from '../lib/constants.ts'
 import { store, labsView } from '../lib/store.ts'
-import { naira, CHART, WATERFALL } from '../lib/constants.ts'
+import { naira, CHART, WATERFALL, statusColor } from '../lib/constants.ts'
 import { t } from '../lib/i18n.ts'
 import { Donut, Bars, ChartCard } from './Charts.tsx'
 

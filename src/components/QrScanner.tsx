@@ -5,8 +5,8 @@ import { useState, useEffect, useRef } from 'react'
 import jsQR from 'jsqr'
 
 export function QrScanner({ onFound, onClose }) {
-  const videoRef = React.useRef(null)
-  const canvasRef = React.useRef(null)
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const [err, setErr] = useState('')
   useEffect(() => {
     let stream = null, raf = null, stopped = false

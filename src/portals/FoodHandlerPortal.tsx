@@ -3,13 +3,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
+import { WATERFALL } from '../lib/constants.ts'
+import { makeSafeplateId, journeyStep, generateReceiptPDF } from '../lib/helpers.ts'
 import { QRCodeSVG } from 'qrcode.react'
 import { store, labsView } from '../lib/store.ts'
-import { naira, FEE, MANDATORY_TESTS, LAGOS_LGAS, NDPA_CONSENT_VERSION, WEEKDAYS, DEFAULT_SLOTS, PALETTE, isValidEmail, isValidPhone } from '../lib/constants.ts'
+import { naira, FEE, MANDATORY_TESTS, LAGOS_LGAS, NDPA_CONSENT_VERSION, WEEKDAYS, DEFAULT_SLOTS, PALETTE, STEP_LABELS, isValidEmail, isValidPhone } from '../lib/constants.ts'
 import { t } from '../lib/i18n.ts'
 import { toast } from '../lib/toast.ts'
 import { compressImage } from '../lib/image.ts'
-import { PAYSTACK_READY, PAYSTACK_PUBLIC_KEY, SUPABASE_READY } from '../lib/config.ts'
+import { PAYSTACK_READY, PAYSTACK_PUBLIC_KEY, SUPABASE_READY, payWithPaystack } from '../lib/config.ts'
 import NavIcon from '../components/NavIcon.tsx'
 import { AppealButton } from '../components/Appeals.tsx'
 import LabAvailability from '../components/LabAvailability.tsx'
