@@ -4,7 +4,7 @@
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
 import { WATERFALL } from '../lib/constants.ts'
-import { makeSafeplateId, journeyStep, generateReceiptPDF } from '../lib/helpers.ts'
+import { makeSafeplateId, journeyStep, generateReceiptPDF, generateCertPDF } from '../lib/helpers.ts'
 import { QRCodeSVG } from 'qrcode.react'
 import { store, labsView } from '../lib/store.ts'
 import { naira, FEE, MANDATORY_TESTS, LAGOS_LGAS, NDPA_CONSENT_VERSION, WEEKDAYS, DEFAULT_SLOTS, PALETTE, STEP_LABELS, isValidEmail, isValidPhone } from '../lib/constants.ts'

@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { PALETTE } from '../lib/constants.ts'
 import { SUPABASE_READY, PAYSTACK_READY, payWithPaystack } from '../lib/config.ts'
-import { makeSafeplateId } from '../lib/helpers.ts'
+import { makeSafeplateId, generateCertPDF } from '../lib/helpers.ts'
 import { QRCodeSVG } from 'qrcode.react'
 import { store, labsView } from '../lib/store.ts'
 import { naira, FEE, WATER_FEE, MANDATORY_TESTS, LAGOS_LGAS, WEEKDAYS, STAFF_STATUSES } from '../lib/constants.ts'
@@ -108,8 +108,8 @@ function EmployerTeam({ session }) {
         if (!x.safeplateId) return
         try {
           const cert = await store.verifyCertificate(x.safeplateId)
-          if (cert && cert.status === 'VALID') { if (x.status !== 'Certified') { x.status = 'Certified'; changed = true } return }
-          if (cert && cert.status === 'EXPIRED') { if (x.status !== 'Expired') { x.status = 'Expired'; changed = true } return }
+          if (cert && cert.status === 'VALID') { x.cert = cert; if (x.status !== 'Certified') { x.status = 'Certified'; changed = true } return }
+          if (cert && cert.status === 'EXPIRED') { x.cert = cert; if (x.status !== 'Expired') { x.status = 'Expired'; changed = true } return }
           const order = await store.getOrderFor(x.safeplateId)
           if (order) {
             let st = x.status
@@ -165,8 +165,12 @@ function EmployerTeam({ session }) {
       setMsgErr(false); setMsg('Enrolled and paid for ' + pending.length + ' staff, ' + naira(pending.length * FEE) + ' into escrow.')
       toast('Enrolled ' + pending.length + ' staff into testing.')
     } catch (e) {
-      setMsgErr(true); setMsg('Could not complete enrolment: ' + (e.message || 'please try again.'))
-      toast('Enrolment could not complete.', 'err')
+      // Surface the real reason. A bare "could not complete" hid a backend
+      // ReferenceError during review; the specific message makes the next failure
+      // diagnosable (e.g. a 403 role problem, or a payment/backend error).
+      const detail = (e && e.message) ? e.message : 'please try again.'
+      setMsgErr(true); setMsg('Could not complete enrolment: ' + detail)
+      toast('Enrolment could not complete: ' + detail, 'err')
     }
     setBusy(false)
   }
@@ -287,7 +291,10 @@ function EmployerTeam({ session }) {
         <div className="ord" key={x.id}>
           <div className="top">
             <div><b style={{ fontFamily: 'Lora,serif', fontSize: 15 }}>{x.name}</b><div className="muted" style={{ fontSize: 12.5 }}>{x.phone}{x.safeplateId ? ' · ' + x.safeplateId : ''}</div></div>
-            <span className={'pill ' + (STAFF_STATUSES[x.status] || 'no')}>{x.status}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {x.cert && x.cert.status === 'VALID' && <button className="btn xs" onClick={() => generateCertPDF(x.cert)}>Certificate (PDF)</button>}
+              <span className={'pill ' + (STAFF_STATUSES[x.status] || 'no')}>{x.status}</span>
+            </div>
           </div>
         </div>
       ))}

@@ -155,6 +155,17 @@ function normaliseCert(cert) {
 }
 
 // Map between the app's camelCase fields and the database's snake_case columns.
+const DEFAULT_FAQS = [
+  { id: 'faq-what', sort: 0, question: 'What is SafePlate?', answer: 'SafePlate is the Lagos State unified platform for food handler certification and the safety of potable water and beverages. It lets food handlers register, get tested at accredited laboratories, and receive a Certificate of Fitness, and lets anyone verify a certificate.' },
+  { id: 'faq-who', sort: 1, question: 'Who needs to register?', answer: 'Anyone who handles food commercially in Lagos State, and operators of water and beverage production such as sachet water. Employers can enrol their whole team at once.' },
+  { id: 'faq-cost', sort: 2, question: 'How much does certification cost?', answer: 'Food handler certification is ₦15,000 per person and covers the mandated test panel. Water and beverage testing is ₦65,000 per facility. Payments are held in escrow and released only after approved results, so there are no hidden charges.' },
+  { id: 'faq-tests', sort: 3, question: 'What tests are required?', answer: 'The mandated panel is Hepatitis A, Hepatitis E, and Stool Microscopy & Culture (MC), carried out by an accredited laboratory. Your medical results are private and are never shown to your employer.' },
+  { id: 'faq-valid', sort: 4, question: 'How long is a certificate valid?', answer: 'A Certificate of Fitness is valid for 182 days (about six months). You will be reminded before it expires, and renewal repeats the full test panel.' },
+  { id: 'faq-verify', sort: 5, question: 'How do I verify a certificate?', answer: 'Use the Verify page and enter the SAFEPLATE ID, or scan the QR code on the certificate. Anyone can do this without signing in, and it shows whether the certificate is valid and in date.' },
+  { id: 'faq-privacy', sort: 6, question: 'Who can see my medical results?', answer: 'Only you and the Lagos State Ministry of Health can access your test results. Employers see your compliance status only, never your medical data, in line with the Nigeria Data Protection Act 2023.' },
+  { id: 'faq-complaint', sort: 7, question: 'How do I report an unsafe food or water vendor?', answer: 'Use the "Report a concern" page. You can report anonymously, and reports are routed to the appropriate agency (LASEPA or HEFAMAA) for inspection.' },
+]
+
 const toSnake = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/[A-Z]/g, m => '_' + m.toLowerCase()), v])) : o
 const toCamel = o => o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v])) : o
 const camelList = a => (a || []).map(toCamel)
@@ -315,6 +326,30 @@ const store = {
     DEMO.write(db)
     await store.notify('LASEPA', 'New public complaint', c.establishment + ' (' + ref + ')')
     return { ok: true, reference: ref }
+  },
+  // FAQs: read-only for the public, editable by LSMoH. Persisted to the faqs table
+  // live, or localStorage in demo. Seeded with sensible defaults so the page is
+  // never empty before LSMoH curates it.
+  async listFaqs() {
+    if (SUPABASE_READY) {
+      const { data } = await supabase.from('faqs').select('*').order('sort', { ascending: true })
+      const rows = camelList(data)
+      return (rows && rows.length) ? rows : DEFAULT_FAQS
+    }
+    const db = DEMO.read()
+    return (db.faqs && db.faqs.length) ? db.faqs : DEFAULT_FAQS
+  },
+  async saveFaqs(faqs, actor) {
+    const clean = (faqs || []).map((f, i) => ({ id: f.id || ('faq-' + Date.now() + '-' + i), question: (f.question || '').trim(), answer: (f.answer || '').trim(), sort: i })).filter(f => f.question && f.answer)
+    if (SUPABASE_READY) {
+      // Replace the set: delete all, insert the current list. FAQs are low-volume.
+      await supabase.from('faqs').delete().neq('id', '')
+      if (clean.length) { const { error } = await supabase.from('faqs').insert(clean.map(toSnake)); if (error) throw new Error(error.message) }
+      await this.appendAudit({ actor: actor || 'LSMoH', role: 'LSMoH', action: 'Updated FAQ content (' + clean.length + ' entries)', subject: 'faqs' })
+      return clean
+    }
+    const db = DEMO.read(); db.faqs = clean; DEMO.write(db)
+    return clean
   },
   async listComplaints() {
     if (SUPABASE_READY) { const { data } = await supabase.from('complaints').select('*').order('created_at', { ascending: false }); return camelList(data) }

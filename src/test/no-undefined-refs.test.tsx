@@ -13,14 +13,14 @@ function collectLibExports() {
   for (const f of readdirSync('src/lib')) {
     if (!/\.(ts|tsx)$/.test(f)) continue
     const s = readFileSync(join('src/lib', f), 'utf8')
-    for (const m of s.matchAll(/export\s+(?:const|function|let|class)\s+([A-Za-z_$][\w$]*)/g)) map[m[1]] = 'lib/' + f
+    for (const m of s.matchAll(/export\s+(?:async\s+)?(?:const|function|let|class)\s+([A-Za-z_$][\w$]*)/g)) map[m[1]] = 'lib/' + f
     for (const m of s.matchAll(/export\s*\{([^}]*)\}/g)) m[1].split(',').forEach(x => { const n = x.split(' as ').pop().trim(); if (n) map[n] = 'lib/' + f })
   }
   return map
 }
 function appTopLevelDefs() {
   const s = readFileSync('src/App.jsx', 'utf8')
-  return new Set([...s.matchAll(/^(?:export\s+)?(?:const|function|let)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]))
+  return new Set([...s.matchAll(/^(?:export\s+)?(?:async\s+)?(?:const|function|let)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]))
 }
 
 describe('no missing cross-module imports', () => {

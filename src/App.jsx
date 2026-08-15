@@ -15,6 +15,7 @@
 
 import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { generateCertPDF } from './lib/helpers.ts'
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
@@ -102,54 +103,10 @@ const BURDEN = [
 
 // Compress a photo to <= ~200KB and return a JPEG data URL.
 
-async function fetchDataUrl(url) {
-  const r = await fetch(url); const b = await r.blob()
-  return new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b) })
-}
 
 // Build and download a Certificate of Fitness PDF.
 
 
-async function generateCertPDF(cert) {
-  const id = cert.safeplateId || cert.safeplate_id
-  const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'landscape' })
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight()
-  doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.rect(28, 28, W - 56, H - 56)
-  doc.setDrawColor(251, 174, 64); doc.setLineWidth(0.7); doc.rect(36, 36, W - 72, H - 72)
-  try { const crest = await fetchDataUrl('/lagos-logo.png'); doc.addImage(crest, 'PNG', W / 2 - 42, 52, 84, 84) } catch (e) { /* ignore */ }
-  try {
-    const sx = 96, sy = H - 132
-    doc.setDrawColor(0, 102, 0); doc.setLineWidth(2); doc.circle(sx, sy, 34)
-    doc.setDrawColor(251, 174, 64); doc.setLineWidth(1.4); doc.circle(sx, sy, 29)
-    doc.setFillColor(0, 102, 0); doc.circle(sx, sy, 21, 'F')
-    doc.setDrawColor(255, 255, 255); doc.setLineWidth(3.4)
-    doc.line(sx - 9, sy + 1, sx - 3, sy + 8); doc.line(sx - 3, sy + 8, sx + 10, sy - 8)
-    doc.setFont('times', 'bold'); doc.setFontSize(6); doc.setTextColor(0, 102, 0); doc.text('LAGOS STATE  •  VERIFIED', sx, sy + 44, { align: 'center' })
-  } catch (e) { /* ignore */ }
-  if (cert.photo) { try { doc.addImage(cert.photo, 'JPEG', W - 166, 58, 96, 112); doc.setDrawColor(0, 102, 0); doc.setLineWidth(1); doc.rect(W - 166, 58, 96, 112); doc.setFont('times', 'normal'); doc.setFontSize(8); doc.setTextColor(90, 107, 100); doc.text('HOLDER', W - 118, 184, { align: 'center' }) } catch (e) { /* ignore */ } }
-  doc.setFont('times', 'bold'); doc.setTextColor(0, 51, 102); doc.setFontSize(16)
-  doc.text('Lagos State Ministry of Health', W / 2, 162, { align: 'center' })
-  doc.setFontSize(22); doc.setTextColor(0, 102, 0)
-  doc.text('Certificate of Fitness', W / 2, 192, { align: 'center' })
-  doc.setFont('times', 'normal'); doc.setFontSize(11); doc.setTextColor(90, 107, 100)
-  doc.text('SafePlate, Food Handler Safety and Compliance', W / 2, 212, { align: 'center' })
-  let y = 262
-  const row = (label, val) => { doc.setFont('times', 'bold'); doc.setTextColor(18, 36, 31); doc.setFontSize(12); doc.text(label, 70, y); doc.setFont('times', 'normal'); doc.text(String(val || '-'), 240, y); y += 27 }
-  row('Name', cert.name)
-  row('SAFEPLATE ID', id)
-  row('Certificate No', cert.cert_no || cert.certNo || cert.series || '-')
-  row('Test panel', cert.panel)
-  row('Issued', cert.issued ? new Date(cert.issued).toLocaleDateString('en-GB') : '-')
-  row('Expires', new Date(cert.expiry || cert.expiry_date).toLocaleDateString('en-GB'))
-  y += 8; doc.setFont('times', 'bold'); doc.setFontSize(14); doc.setTextColor(0, 102, 0)
-  doc.text('STATUS: FIT FOR FOOD HANDLING', 70, y)
-  try { const qr = await QRCode.toDataURL(window.location.origin + '/#/verify/' + id, { margin: 1, width: 170 }); doc.addImage(qr, 'PNG', W - 196, 250, 126, 126) } catch (e) { /* ignore */ }
-  doc.setFont('times', 'normal'); doc.setFontSize(10); doc.setTextColor(90, 107, 100)
-  doc.text('Verify at ' + window.location.origin + '/#/verify/' + id, 70, H - 96)
-  doc.text('Report a concern: 0800-SAFE-PLATE (LASEPA)', 70, H - 80)
-  doc.text('Issued under the NAFDAC Food Hygiene Regulation 2019. Biannual renewal required.', 70, H - 64)
-  doc.save('SafePlate-Certificate-' + id + '.pdf')
-}
 
 // Chart palette (defined early: referenced by AUDIT_CATS and the chart components).
 
@@ -189,6 +146,7 @@ function tabsForSession(session) {
     { id: 'impact', label: t('nav_impact') },
     { id: 'report', label: 'Report a concern' },
     { id: 'directory', label: 'Directory' },
+    { id: 'faq', label: 'FAQ' },
     { id: 'verify', label: t('nav_verify') }
   ]
   switch (session.role) {
@@ -1278,6 +1236,33 @@ function ImpactPage() {
 // Camera QR scanner. Reads a SafePlate QR and hands back the SAFEPLATE ID.
 // Requires HTTPS (Vercel provides it) and one-off camera permission.
 
+function FaqPage() {
+  const [faqs, setFaqs] = useState(null)
+  const [open, setOpen] = useState(0)
+  useEffect(() => { store.listFaqs().then(setFaqs).catch(() => setFaqs([])) }, [])
+  return (
+    <div className="page"><div className="wrap" style={{ maxWidth: 820 }}>
+      <div style={{ margin: '10px 0 22px' }}>
+        <span className="kicker">Help centre</span>
+        <h2 className="sec serif" style={{ margin: '8px 0 6px' }}>Frequently asked questions</h2>
+        <p className="sub">Common questions about registering, testing, certificates and verification. Maintained by the Lagos State Ministry of Health.</p>
+      </div>
+      {faqs === null && <div className="muted">Loading…</div>}
+      {faqs && faqs.length === 0 && <div className="note">No questions have been published yet.</div>}
+      {faqs && faqs.map((f, i) => (
+        <div key={f.id || i} className="card" style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setOpen(open === i ? -1 : i)}>
+          <div className="row-between" style={{ alignItems: 'center' }}>
+            <b className="serif" style={{ fontSize: 16 }}>{f.question}</b>
+            <span aria-hidden="true" style={{ fontSize: 20, color: 'var(--green)', transform: open === i ? 'rotate(45deg)' : 'none', transition: 'transform .2s' }}>+</span>
+          </div>
+          {open === i && <p className="muted" style={{ margin: '10px 0 0', fontSize: 14.5, lineHeight: 1.6 }}>{f.answer}</p>}
+        </div>
+      ))}
+      <div className="note" style={{ marginTop: 18 }}>Still need help? Use <b>Report a concern</b> for vendor issues, or contact your local government health office.</div>
+    </div></div>
+  )
+}
+
 function VerifyWidget({ initialId }) {
   const [id, setId] = useState(initialId || '')
   const [result, setResult] = useState(undefined)
@@ -1844,6 +1829,7 @@ export default function App() {
       if (tab === 'impact') return <ImpactPage />
       if (tab === 'report') return <ReportConcern />
       if (tab === 'directory') return <Directory />
+      if (tab === 'faq') return <FaqPage />
       return <Overview onStart={() => setMode('auth')} onVerify={() => setTab('verify')} />
     }
     if (eff.role === 'food_handler') return <Suspense fallback={<div style={{padding:24}} className="muted">Loading…</div>}><FoodHandlerModule session={eff} /></Suspense>

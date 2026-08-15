@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { makeWaterCertSeries } from '../lib/water.ts'
 import { SUPABASE_READY } from '../lib/config.ts'
-import { smatch, timeAgo, qaGrade, auditCat, auditCatColor, generateEnforcementLetter, generateQaReportPDF } from '../lib/helpers.ts'
+import { smatch, timeAgo, qaGrade, auditCat, auditCatColor, generateEnforcementLetter, generateQaReportPDF, generateCertPDF } from '../lib/helpers.ts'
 import { store, labsView, normaliseCert } from '../lib/store.ts'
 import { naira, CHART, WATERFALL, WATER_WATERFALL, FUND_PER_TXN, FEE, WATER_FEE, LAGOS_LGAS, SANCTION_LADDER, SANCTION_SEVERE, MINI, METRICS, AUDIT_CATS, MANDATORY_TESTS, slaExceeded, statusColor } from '../lib/constants.ts'
 import { LAB_QA_TEMPLATE, QA_OUTCOMES } from '../lib/audit-template.ts'
@@ -202,7 +202,7 @@ function RegulatorModule({ session, tab, onTab }) {
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} session={session} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
-      {tab === 'audit' && <>{agency === 'LSMoH' && <ErasureQueue guard={guard} />}<AuditPanel /></>}
+      {tab === 'audit' && <>{agency === 'LSMoH' && <><FaqManager session={session} /><ErasureQueue guard={guard} /></>}<AuditPanel /></>}
       {modal}
     </div></div>
   )
@@ -834,6 +834,52 @@ function AnomalySignals() {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+function FaqManager({ session }) {
+  const [faqs, setFaqs] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  useEffect(() => { store.listFaqs().then(setFaqs).catch(() => setFaqs([])) }, [])
+  function update(i, field, val) { setFaqs(fs => fs.map((f, j) => j === i ? { ...f, [field]: val } : f)) }
+  function add() { setFaqs(fs => [...(fs || []), { id: 'faq-' + Date.now(), question: '', answer: '' }]) }
+  function remove(i) { setFaqs(fs => fs.filter((_, j) => j !== i)) }
+  function move(i, dir) { setFaqs(fs => { const a = [...fs]; const j = i + dir; if (j < 0 || j >= a.length) return a;[a[i], a[j]] = [a[j], a[i]]; return a }) }
+  async function save() {
+    setBusy(true); setMsg('')
+    try { const saved = await store.saveFaqs(faqs, session && session.email); setFaqs(saved); setMsg('Saved. The public FAQ page is updated.'); toast('FAQ content saved.') }
+    catch (e) { setMsg('Could not save: ' + (e.message || 'try again')) }
+    setBusy(false)
+  }
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>FAQ content</h3>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>
+        Questions and answers shown on the public Help centre. Changes go live for
+        everyone when you save.
+      </p>
+      {faqs === null && <div className="muted">Loading…</div>}
+      {faqs && faqs.map((f, i) => (
+        <div key={f.id || i} className="card" style={{ marginBottom: 10 }}>
+          <div className="row-between" style={{ marginBottom: 8 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Question {i + 1}</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn xs" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+              <button className="btn xs" onClick={() => move(i, 1)} disabled={i === faqs.length - 1} aria-label="Move down">↓</button>
+              <button className="btn xs danger" onClick={() => remove(i)}>Remove</button>
+            </div>
+          </div>
+          <div className="field" style={{ marginBottom: 8 }}><input value={f.question} onChange={e => update(i, 'question', e.target.value)} placeholder="Question" aria-label="Question" /></div>
+          <div className="field" style={{ marginBottom: 0 }}><textarea value={f.answer} onChange={e => update(i, 'answer', e.target.value)} placeholder="Answer" rows={3} aria-label="Answer" /></div>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 10, marginTop: 6, alignItems: 'center' }}>
+        <button className="btn" onClick={add}>Add question</button>
+        <button className="btn p" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save FAQ content'}</button>
+        {msg && <span className="muted" style={{ fontSize: 13 }}>{msg}</span>}
+      </div>
     </div>
   )
 }
