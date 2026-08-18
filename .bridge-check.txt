@@ -1,1 +1,0 @@
-Bridge write test. Removed immediately after.
