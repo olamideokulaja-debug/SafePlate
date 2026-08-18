@@ -447,7 +447,25 @@ Deno.serve(async (req) => {
         await tellHandler(db, o.safeplate_id, 'your result is taking longer than the 48-hour target. The Ministry has been notified and is following it up.')
         flagged++
       }
-      return json({ ok: true, checked: (late || []).length, flagged })
+      // Ministry-review SLA: results submitted but not approved/flagged within the
+      // review target (72h from submission). Escalates within LSMoH.
+      const REVIEW_SLA_HOURS = 72
+      const reviewCutoff = new Date(Date.now() - REVIEW_SLA_HOURS * 3600000).toISOString()
+      const { data: staleReviews } = await db.from('test_orders')
+        .select('id, safeplate_id, handler_name, lab, status, submitted_at, review_sla_breached')
+        .eq('status', 'Submitted')
+        .lt('submitted_at', reviewCutoff)
+      let reviewsFlagged = 0
+      for (const o of (staleReviews || [])) {
+        if (o.review_sla_breached) continue
+        await db.from('test_orders').update({ review_sla_breached: true, review_sla_breached_at: new Date().toISOString() }).eq('id', o.id)
+        await db.from('notifications').insert([
+          { audience: 'LSMoH', title: 'Review overdue', body: 'Result for ' + o.safeplate_id + ' has awaited Ministry review beyond ' + REVIEW_SLA_HOURS + ' hours' }
+        ])
+        await db.from('audit_log').insert({ actor: 'system', role: 'system', action: 'Ministry review SLA (' + REVIEW_SLA_HOURS + 'h) breached, escalated within LSMoH', subject: o.safeplate_id })
+        reviewsFlagged++
+      }
+      return json({ ok: true, checked: (late || []).length, flagged, reviewsChecked: (staleReviews || []).length, reviewsFlagged })
     }
 
     // ---- Send a 2FA OTP over Termii ----

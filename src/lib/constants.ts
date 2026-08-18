@@ -99,4 +99,18 @@ export function slaExceeded(order: any): boolean {
   const t = order.submittedAt || order.createdAt
   return t ? (Date.now() - new Date(t).getTime()) / 3600000 > 48 : false
 }
+
+// Ministry-review SLA: target time for LSMoH to approve or flag a submitted result.
+// Distinct from the 48h LAB turnaround. Measured from submission.
+export const MINISTRY_SLA_HOURS = 72
+export function reviewHoursLeft(order: any): number | null {
+  const t = order.submittedAt || order.submitted_at
+  if (!t) return null
+  const elapsed = (Date.now() - new Date(t).getTime()) / 3600000
+  return MINISTRY_SLA_HOURS - elapsed
+}
+export function reviewOverdue(order: any): boolean {
+  const left = reviewHoursLeft(order)
+  return left != null && left < 0
+}
 export const statusColor = (s: string): string => /Approved|Certified|Released/.test(s) ? CHART[0] : /Flag|Reject|Overdue|Quarant/.test(s) ? CHART[4] : /Submitted|Pending|Testing/.test(s) ? CHART[1] : CHART[2]

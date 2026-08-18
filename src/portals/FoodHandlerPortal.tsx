@@ -243,7 +243,10 @@ function FoodHandlerModule({ session }) {
       <div className="steps">{STEP_LABELS.map((l, i) => <div key={l} className={'s ' + (i === step ? 'on' : '') + (i < step ? ' done' : '')} title={l} />)}</div>
       {err && <div className="err">{err}</div>}
 
-      {step === 0 && (
+      {step === 0 && !form.readinessDone && (
+        <TestReadiness onProceed={(answers) => setForm(f => ({ ...f, readinessDone: true, readiness: answers }))} />
+      )}
+      {step === 0 && form.readinessDone && (
         <div className="card">
           <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>{t('fh_s1')}</h3><span className="st">Step 1 of 4</span></div>
           <p className="muted" style={{ marginTop: 4 }}>Your details are verified and you receive a unique, traceable ID.</p>
@@ -392,6 +395,70 @@ function FoodJourney({ step }) {
         })}
       </div>
       <div className="jnote muted">{current <= 3 ? 'Complete the steps above to submit your sample. After that, the laboratory tests it and the Ministry reviews the result before your certificate is issued.' : 'Payment received. Give your sample at your chosen laboratory, they test it, then the Ministry reviews and issues your Certificate of Fitness.'}</div>
+    </div>
+  )
+}
+
+
+// Guided pre-registration questionnaire (item 1). Because the test panel is FIXED
+// and mandatory for every food handler, this does not SELECT tests; it confirms
+// eligibility, explains what the applicant is signing up for, and captures a few
+// readiness flags the laboratory should know about.
+// NOTE: the clinical questions and any resulting guidance below are a reasonable
+// PLACEHOLDER and must be reviewed and signed off by LSMoH before go-live.
+function TestReadiness({ onProceed }) {
+  const [role, setRole] = useState('')
+  const [understood, setUnderstood] = useState(false)
+  const [symptoms, setSymptoms] = useState('no')
+  const [recentAntibiotics, setRecentAntibiotics] = useState('no')
+  const notEligible = role === 'none'
+  const canProceed = role && role !== 'none' && understood
+  return (
+    <div className="card">
+      <div className="wizard-head"><h3 className="serif" style={{ margin: 0, fontSize: 21 }}>Before you register</h3><span className="st">Readiness check</span></div>
+      <p className="muted" style={{ marginTop: 4 }}>A few quick questions so you know exactly what to expect. This takes under a minute.</p>
+
+      <div className="field"><label>Which best describes your work?</label>
+        <select value={role} onChange={e => setRole(e.target.value)}>
+          <option value="">Select...</option>
+          <option value="prep">I prepare or cook food</option>
+          <option value="serve">I serve food or drinks</option>
+          <option value="produce">I produce or pack water, sachet water or beverages</option>
+          <option value="market">I sell food at a market or stall</option>
+          <option value="none">None of these</option>
+        </select>
+      </div>
+      {notEligible && <div className="note" style={{ borderColor: 'var(--gold)', background: '#fdf8ee', marginBottom: 12 }}>Food handler certification is for people who handle food, water or beverages commercially. If this does not describe you, you may not need to register. If you are unsure, check the FAQ or contact your local government health office.</div>}
+
+      <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', margin: '4px 0 14px', background: '#fafcfb' }}>
+        <div className="kicker" style={{ color: 'var(--green)', marginBottom: 8 }}>The tests you will take</div>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Every food handler in Lagos takes the same mandatory panel at an accredited laboratory. You do not choose these; they are fixed by the Ministry of Health:</p>
+        <div>{MANDATORY_TESTS.map(t => <div key={t} className="lab-row on" style={{ cursor: 'default' }}><span>{t}</span><span className="pill ok">Mandatory</span></div>)}</div>
+        <p className="muted" style={{ fontSize: 12.5, marginBottom: 0, marginTop: 10 }}>No fasting is required. Bring a valid ID. Results are usually ready within 48 hours and are private to you and the Ministry.</p>
+      </div>
+
+      <div className="field"><label>Do you currently have vomiting, diarrhoea, jaundice (yellow eyes/skin) or a skin infection on your hands?</label>
+        <select value={symptoms} onChange={e => setSymptoms(e.target.value)}>
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </div>
+      {symptoms === 'yes' && <div className="note" style={{ borderColor: 'var(--gold)', background: '#fdf8ee', marginBottom: 12, fontSize: 12.5 }}>Please tell the laboratory about these symptoms when you attend. You can still register now; the laboratory and Ministry will take your symptoms into account when reviewing your results. If you feel unwell, see a clinician.</div>}
+
+      <div className="field"><label>Have you taken antibiotics in the last 7 days?</label>
+        <select value={recentAntibiotics} onChange={e => setRecentAntibiotics(e.target.value)}>
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </div>
+      {recentAntibiotics === 'yes' && <div className="note" style={{ fontSize: 12.5, marginBottom: 12 }}>Recent antibiotics can affect stool culture results. Mention this at the laboratory so they can advise on timing.</div>}
+
+      <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13.5, lineHeight: 1.55, margin: '4px 0 14px' }}>
+        <input type="checkbox" checked={understood} onChange={e => setUnderstood(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, flex: '0 0 auto' }} />
+        <span>I understand I will take the mandatory test panel above at an accredited laboratory, and that my certificate is valid for six months and then must be renewed.</span>
+      </label>
+
+      <button className="btn p block" onClick={() => onProceed({ role, symptoms, recentAntibiotics })} disabled={!canProceed}>Continue to registration</button>
     </div>
   )
 }

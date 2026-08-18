@@ -18,6 +18,18 @@ function collectLibExports() {
   }
   return map
 }
+// Every top-level function/const name defined in a lib file, EXPORTED OR NOT. A
+// non-exported one used in another file can never resolve at runtime, so it must
+// be flagged too (this is how the exportCsv bug slipped through).
+function collectAllLibDefs() {
+  const map = {}
+  for (const f of readdirSync('src/lib')) {
+    if (!/\.(ts|tsx)$/.test(f)) continue
+    const s = readFileSync(join('src/lib', f), 'utf8')
+    for (const m of s.matchAll(/^(?:export\s+)?(?:async\s+)?(?:const|function|let|class)\s+([A-Za-z_$][\w$]*)/gm)) map[m[1]] = 'lib/' + f
+  }
+  return map
+}
 function appTopLevelDefs() {
   const s = readFileSync('src/App.jsx', 'utf8')
   return new Set([...s.matchAll(/^(?:export\s+)?(?:async\s+)?(?:const|function|let)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]))
@@ -25,6 +37,7 @@ function appTopLevelDefs() {
 
 describe('no missing cross-module imports', () => {
   const libExports = collectLibExports()
+  const allLibDefs = collectAllLibDefs()
   const appDefs = appTopLevelDefs()
   const files = []
   for (const dir of ['src/portals', 'src/components']) for (const f of readdirSync(dir)) if (/\.(tsx|ts|jsx)$/.test(f)) files.push(join(dir, f))
@@ -53,6 +66,7 @@ describe('no missing cross-module imports', () => {
         // or ALL_CAPS constants, which is where the real bug family lives.
         if (u.length < 4 && u !== u.toUpperCase()) continue
         if (libExports[u]) problems.push(`${f}: uses '${u}' (export of ${libExports[u]}) without importing it`)
+        else if (allLibDefs[u]) problems.push(`${f}: uses '${u}' (defined non-exported in ${allLibDefs[u]}) — cannot resolve; export it and import`)
         else if (appDefs.has(u) && /^[a-z]/.test(u) === false && u === u.toUpperCase() ? false : appDefs.has(u)) {
           // App.jsx-defined symbol used in a chunk: always a problem (App.jsx isn't importable here)
           problems.push(`${f}: uses '${u}' (defined in App.jsx) without importing it`)

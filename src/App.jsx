@@ -164,9 +164,9 @@ function tabsForSession(session) {
       { id: 'batch', label: t('nav_batch') }, { id: 'beneficiaries', label: t('nav_beneficiaries') }, { id: 'fund', label: t('nav_fund') }, { id: 'reconcile', label: t('nav_reconcile') }, { id: 'reports', label: 'Reports' }, { id: 'admin', label: 'Admin' }, { id: 'verify', label: t('nav_verify') }
     ]
     case 'regulator':
-      if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'complaints', label: 'Complaints' }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      if (session.agency === 'HEFAMAA') return [{ id: 'home', label: t('nav_home') }, { id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
-      return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'complaints', label: 'Complaints' }, { id: 'officers', label: 'Officers' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'LASEPA') return [{ id: 'home', label: t('nav_home') }, { id: 'enforcement', label: t('nav_enforcement') }, { id: 'complaints', label: 'Complaints' }, { id: 'water', label: t('nav_water') }, { id: 'officers', label: 'Officers' }, { id: 'reports', label: 'Reports' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      if (session.agency === 'HEFAMAA') return [{ id: 'home', label: t('nav_home') }, { id: 'accreditation', label: t('nav_accreditation') }, { id: 'officers', label: 'Officers' }, { id: 'reports', label: 'Reports' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
+      return [{ id: 'home', label: t('nav_home') }, { id: 'review', label: t('nav_review') }, { id: 'certificates', label: t('nav_certificates') }, { id: 'complaints', label: 'Complaints' }, { id: 'officers', label: 'Officers' }, { id: 'reports', label: 'Reports' }, { id: 'documents', label: 'Documents' }, { id: 'audit', label: t('nav_audit') }, { id: 'verify', label: t('nav_verify') }]
     default: return [{ id: 'verify', label: t('nav_verify') }]
   }
 }

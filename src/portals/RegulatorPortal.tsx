@@ -4,11 +4,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 import { useState, useEffect, useMemo } from 'react'
+import Repository from '../components/Repository.tsx'
+import ReportingModule from '../components/Reporting.tsx'
 import { makeWaterCertSeries } from '../lib/water.ts'
 import { SUPABASE_READY } from '../lib/config.ts'
 import { smatch, timeAgo, qaGrade, auditCat, auditCatColor, generateEnforcementLetter, generateQaReportPDF, generateCertPDF } from '../lib/helpers.ts'
-import { store, labsView, normaliseCert } from '../lib/store.ts'
-import { naira, CHART, WATERFALL, WATER_WATERFALL, FUND_PER_TXN, FEE, WATER_FEE, LAGOS_LGAS, SANCTION_LADDER, SANCTION_SEVERE, MINI, METRICS, AUDIT_CATS, MANDATORY_TESTS, slaExceeded, statusColor } from '../lib/constants.ts'
+import { store, labsView, normaliseCert, exportCsv } from '../lib/store.ts'
+import { naira, CHART, WATERFALL, WATER_WATERFALL, FUND_PER_TXN, FEE, WATER_FEE, LAGOS_LGAS, SANCTION_LADDER, SANCTION_SEVERE, MINI, METRICS, AUDIT_CATS, MANDATORY_TESTS, slaExceeded, statusColor, MINISTRY_SLA_HOURS, reviewHoursLeft, reviewOverdue } from '../lib/constants.ts'
 import { LAB_QA_TEMPLATE, QA_OUTCOMES } from '../lib/audit-template.ts'
 import { waterChecks } from '../lib/water.ts'
 import { t } from '../lib/i18n.ts'
@@ -202,6 +204,8 @@ function RegulatorModule({ session, tab, onTab }) {
       {tab === 'accreditation' && <Accreditation guard={guard} audit={audit} session={session} />}
       {tab === 'water' && <WaterReview session={session} guard={guard} audit={audit} />}
       {tab === 'officers' && <><OfficersAdmin agency={session.agency} /><SanctionApprovals agency={session.agency} /></>}
+      {tab === 'documents' && agency === 'LSMoH' && <Repository session={session} />}
+      {tab === 'reports' && <div style={{ marginBottom: 26 }}><h3 className="serif" style={{ fontSize: 18, marginBottom: 4 }}>Reports</h3><p className="muted" style={{ marginTop: 0, fontSize: 13, marginBottom: 14 }}>Programme activity over a chosen period. Export as CSV or PDF for records and briefings.</p><ReportingModule session={session} scope="regulator" /></div>}
       {tab === 'audit' && <>{agency === 'LSMoH' && <><FaqManager session={session} /><ErasureQueue guard={guard} /></>}<AuditPanel /></>}
       {modal}
     </div></div>
@@ -309,12 +313,20 @@ function LSMoHReview({ session, guard, audit }) {
           </div>
         )
       })()}
+      {!loading && (() => { const over = shown.filter(reviewOverdue).length; if (!over) return null
+        return <div className="note" style={{ marginBottom: 12, borderColor: '#b3261e', background: '#fdeeee' }}><b>{over} result{over === 1 ? ' has' : 's have'} passed the {MINISTRY_SLA_HOURS}-hour Ministry review target.</b> Prioritise these to keep handlers moving and labs paid on time.</div>
+      })()}
       {!loading && shown.map(o => (
         <div className="ord" key={o.id} style={selected[o.id] ? { borderColor: 'var(--green)', boxShadow: '0 0 0 1px var(--green)' } : undefined}>
           <div className="top"><div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <input type="checkbox" checked={!!selected[o.id]} onChange={() => toggleSel(o.id)} style={{ marginTop: 4, width: 17, height: 17 }} title="Select for bulk approval" />
             <div><b style={{ fontFamily: 'Lora,serif', fontSize: 16 }}>{o.handlerName}</b><div className="muted" style={{ fontSize: 12.5 }}>{o.safeplateId} · {o.lab}</div></div></div>
-            <span className={'status ' + (slaExceeded(o) ? 'Flag' : 'Submitted')}>{slaExceeded(o) ? 'SLA exceeded, escalated' : 'Within 48h SLA'}</span></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+              <span className={'status ' + (slaExceeded(o) ? 'Flag' : 'Submitted')}>{slaExceeded(o) ? 'Lab SLA exceeded' : 'Lab within 48h'}</span>
+              {(() => { const left = reviewHoursLeft(o); if (left == null) return null; const over = left < 0
+                return <span className={'status ' + (over ? 'Flag' : left < 12 ? 'Submitted' : 'Approved')} title={'Ministry review target is ' + MINISTRY_SLA_HOURS + ' hours from submission'}>{over ? ('Review overdue by ' + Math.abs(Math.round(left)) + 'h') : ('Review due in ' + Math.round(left) + 'h')}</span>
+              })()}
+            </div></div>
           {!o.results && <div className="err" style={{ marginTop: 10 }}>The laboratory result panel could not be read for this order. Do not approve it. Contact the laboratory and report this through Help and support.</div>}
           <table className="split-tbl" style={{ marginTop: 8 }}><tbody>{o.tests.map(t => (
             <tr key={t}><td>{t}</td><td style={{ textAlign: 'right', fontWeight: 600, color: !o.results ? 'var(--muted)' : o.results[t] === 'refer' ? '#b3261e' : 'var(--green)' }}>{!o.results ? 'Not available' : o.results[t] === 'refer' ? 'Refer' : 'Pass'}</td></tr>

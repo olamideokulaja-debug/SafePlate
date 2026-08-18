@@ -786,4 +786,4 @@ const store = {
 }
 
 
-export { DEMO, OFFLINE, seedDemo, normaliseCert, labsView, store }
+export { DEMO, OFFLINE, seedDemo, normaliseCert, labsView, store, exportCsv }
